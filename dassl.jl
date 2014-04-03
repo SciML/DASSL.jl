@@ -6,17 +6,22 @@ function dummy(t,y,h,F,rtol,atol)
     k=length(h)-1
 
     alphas=-sum([1/j for j=1:k])
-    t_next=t+h[end]
+    h_next=h[end]
+    t_next=t+h_next
+
     (y0,dy0)=predictor(h,y)
 
-    F_y =jacobian(x->F(t_next, x,dy0), y0)
-    F_dy=jacobian(x->F(t_next,y0,  x),dy0)
-
-    a=-alphas/h[end]
+    a=-alphas/h_next
     b=dy0-a*y0
-    jac=(a*F_dy+F_y)
 
-    (status,yn)=modified_newton( x->(-jac\F(t_next,x,a*x+b)), y0, v->dassl_norm(v,y0,rtol,atol) )
+    delta=sqrt(eps(t))*float([ sign(h_next*dy0[j])*max(abs(y0[j]),
+                                                       abs(h_next*dy0[j]),
+                                                       (rtol*y0+atol)[j])
+                              for j=1:size(y,1)])
+
+    g=G(ed->F(t,y0+ed,dy0+a*ed),delta)
+
+    (status,yn)=modified_newton( x->(-g\F(t_next,x,a*x+b)), y0, v->dassl_norm(v,y0,rtol,atol) )
 end
 
 
@@ -113,17 +118,15 @@ function dassl_norm(v,y,rtol,atol)
     norm(v/(rtol*abs(y)+atol))/sqrt(length(v))
 end
 
-
-# needs some improvement
-function jacobian{T<:Number}(f::Function,x::Array{T,1})
-    epsilon=sqrt(eps(T))
-    n=length(x)
-    eyeps=epsilon*eye(n)
-    s=Array(T,n,n)
+# compute the G matrix from dassl
+function G(f,delta)
+    n=length(delta)
+    edelta=diagm(delta)
+    s=Array(eltype(delta),n,n)
     for i=1:n
-        s[:,i]=((f(x+eyeps[:,i])-f(x-eyeps[:,i]))/2epsilon)
+        s[:,i]=(f(edelta[:,i])-f(0))/delta[i]
     end
-    return s
+    return(s)
 end
 
 end
