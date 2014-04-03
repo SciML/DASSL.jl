@@ -8,7 +8,7 @@ export modified_newton, predictor
 # size(h)=k+2, size(y)=k+1
 function predictor(h,y)
     if size(y,2) != length(h)
-        println("Incompatible size of h and y")
+        error("Incompatible size of h and y")
         return(0)
     end
 
@@ -26,8 +26,7 @@ function predictor(h,y)
     return(y0,dy0)
 end
 
-
-function modified_newton(t,y,F,h)
+function modified_newton(t,y,h,F,rtol,atol)
     k=length(h)-1
     alphas=-sum([1/j for j=1:k])
     t_next=t+h[end]
@@ -40,10 +39,38 @@ function modified_newton(t,y,F,h)
     F_dy=jacobian(x->F(t_next,y0,  x),dy0)
     jac=(a*F_dy+F_y)
 
-    # first guess comes from the predictor method
-    yn=y0
-    for i=1:k+1
-        yn = yn-jac\F(t_next,yn,a*yn+b)
+    # first guess comes from the predictor method, then we compute the
+    # second guess to get the norm ||y0-y1||
+    delta=-jac\F(t_next,y0,a*y0+b)
+    norm1=dassl_norm(delta,y0,rtol,atol)
+    # next step
+    yn=y0+delta
+
+    # after the first iteration the norm turned out to be very small,
+    # terminate and return the first correction step
+    if norm1 < 10*eps(norm1)
+        return(yn)
+    end
+
+    # maximal number of iterations is set by dassl algorithm to 4
+    for i=1:4
+        delta=-jac\F(t_next,yn,a*yn+b)
+        normn=dassl_norm(delta,yn,rtol,atol)
+        rho=(normn/norm1)^(1/i)
+        yn=yn+delta
+
+        conv_factor=rho/(1-rho)*normn
+
+        # decide weather to quit the iteration
+        # 1) iteration converged successfully
+        if conv_factor < 1/3
+            println("Converged after i=" * string(i) * " iterations with convergence factor=" * string(conv_factor))
+            return(yn)
+        # 2) iteration failed to converge
+        elseif conv_factor > 9/10
+            error("Unable to converge!")
+            return(y0)
+        end
     end
 
     return(yn)
@@ -61,7 +88,7 @@ function divided_differences(h,y)
 end
 
 
-function dassl_norm(y,v,rtol,atol)
+function dassl_norm(v,y,rtol,atol)
     norm(v/(rtol*abs(y)+atol))/sqrt(length(v))
 end
 

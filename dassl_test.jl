@@ -1,7 +1,7 @@
 using dassl
 
 # number of previously known steps
-k=2
+k=5
 dh=0.1
 
 t=float([j*dh for j=0:k])
