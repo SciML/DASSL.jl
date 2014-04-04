@@ -17,3 +17,6 @@ end
 t=float([j*dh for j=0:k])
 y=hcat(map(sol,t)...)
 h=[diff(t), dh]
+y0=y[:,end]
+g=eye(1)
+a_old=float(1)
