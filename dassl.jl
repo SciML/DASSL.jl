@@ -12,13 +12,14 @@ export dummy, G
 # k is the order of BDF
 # size(h)=k+2, size(y)=k+1
 # for reference see p. 119
-function dummy(t,y,h,F,g,a_old,rtol,atol)
+function dummy(t,y,h,F,g_old,a_old,rtol,atol)
     if size(y,2) != length(h)
         error("Incompatible size of h and y")
         return(0)
     end
 
     k        = length(h)-1
+
     psi      = cumsum(h[end:-1:1])   # length(psi)=k+1
     psi_old  = cumsum(h[end-1:-1:1]) # length(psi_old)=k
     alpha    = h[end]/psi
@@ -27,23 +28,37 @@ function dummy(t,y,h,F,g,a_old,rtol,atol)
     gamma    = cumsum( [i==1 ? zero(eltype(y)) : alpha[i-1]/h[end] for i=1:k] )
     alpha0   =-sum(alpha[1:k])
     alphas=-sum([1/j for j=1:k])
+
     h_next=h[end]
     t_next=t+h_next
 
     (y0,dy0)=predictor(phi_star,gamma)
+    a=-alphas/h_next
+    b=dy0-a*y0
 
+    # this function is supplied to the modified Newton method
+    f_newton(x)=F(t_next,x,a*x+b)
+
+    # delta for approximation of jacobian
     delta = sqrt(eps(t))*float([ sign(h_next*dy0[j])*max(abs(y0[j]),
                                                            abs(h_next*dy0[j]),
                                                            (rtol*y0+atol)[j])
                                   for j=1:length(y0)])
-    a=-alphas/h_next
-    b=dy0-a*y0
+    # if called, this function computes the current jacobian (G-function)
+    g_new()=G(ed->F(t,y0+ed,dy0+a*ed),delta)
+    a_new=a
+
+    # the norm used to test convergence of the newton method
+    current_norm(v)=dassl_norm(v,y0,rtol,atol)
 
     # we compute the corrected value "yc", recomputing the gradient if necessary
-    (status,yc)=corrector_wrapper!(a,a_old,g,y0,
-                                   ()->G(ed->F(t,y0+ed,dy0+a*ed),delta),
-                                   x->F(t_next,x,a*x+b),
-                                   v->dassl_norm(v,y0,rtol,atol))
+    (status,yc)=corrector_wrapper!(a_old, # old coefficient a
+                                   a_new, # current coefficient a
+                                   g_old, # old jacobian
+                                   g_new, # this function is called when new jacobian is needed
+                                   y0, # starting point for modified newton
+                                   f_newton, # we want to find zeroes of this function
+                                   current_norm) # the norm used to estimate error
 
     M   = max(alpha[k+1],abs(alpha[k+1]+alphas-alpha0))
     err = dassl_norm(yc-y0,y0,rtol,atol)*M
@@ -56,29 +71,31 @@ end
 
 
 # returns the corrected value yc and status.  If needed it updates
-# the jacobian g.
+# the jacobian g_old and a_old.
 
-function corrector_wrapper!(a,a_old,g,y0,new_g,f_newton,norm)
+function corrector_wrapper!(a_new,a_old,g_old,g_new::Function,y0,f_newton,norm)
 
-    if abs((a_old-a)/(a_old+a)) > 1/4
+    if abs((a_old-a_new)/(a_old+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
-        g=new_g()
+        g_old=g_new()
+        a_old=a_new
         # run the corrector
-        (status,yc)=corrector( x->(-g\f_newton(x)), y0, norm)
+        (status,yc)=corrector( x->(-g_old\f_newton(x)), y0, norm)
     else
         # old jacobian should give reasonable convergence
         c=2*a_old/(a+a_old)         # factor "c" is used to speed up
                                     # the convergence when using an
                                     # old jacobian
         # reusing the old jacobian
-        (status,yc)=corrector( x->(-c*(g\f_newton(x))), y0, norm )
+        (status,yc)=corrector( x->(-c*(g_old\f_newton(x))), y0, norm )
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
-            g=new_g()
+            g_old=g_new()
+            a_old=a_new
             # run the corrector again
-            (status,yc)=corrector( x->(-g\f_newton(x)), y0, norm )
+            (status,yc)=corrector( x->(-g_old\f_newton(x)), y0, norm )
         end
     end
 
@@ -163,6 +180,7 @@ end
 
 # compute the G matrix from dassl
 function G(f,delta)
+    info("Recalculating jacobian")
     n=length(delta)
     edelta=diagm(delta)
     s=Array(eltype(delta),n,n)
