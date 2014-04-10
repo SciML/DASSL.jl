@@ -2,14 +2,14 @@ module dassl
 
 export driver
 
-const MAXORDER = 6
+const MAXORDER = 2
 
 type AG
     a
     g
 end
 
-function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 0.01)
+function driver(F,y0,tspan; rtol = 1.0e-5, atol = 1.0e-5, h0 = 0.01)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
@@ -27,6 +27,7 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 0.01)
     t   = [t_start]
     h   = [h0]
     y   = hcat(y0)
+    er  = [0.0]
     num_fail=0
 
     while t[end] < t_stop
@@ -67,19 +68,20 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 0.01)
             continue
         end
 
-        # if length(h) > 100
-        #     break
-        # end
+        if length(h) > 40
+            break
+        end
 
         num_fail=0              # reset the failure counter
         ord = [ord, ordn]
         h   = [h,   hn]
         t   = [t,   t[end]+h[end]]
         y   = [y   yn]
+        er  = [er, err]
 
     end
 
-    return(ord,h,t,y)
+    return(ord,h,t,y,er)
 
 end
 
@@ -272,7 +274,7 @@ function corrector_wrapper!(ag,a_new,g_new::Function,y0,f_newton,norm)
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
     if abs((ag.a-a_new)/(ag.a+a_new)) > 1/4
-        info("estimated convergence too slow")
+        info("Estimated convergence too slow: a_old=$(ag.a), a_new=$a_new")
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
         ag.g=g_new()
@@ -294,6 +296,8 @@ function corrector_wrapper!(ag,a_new,g_new::Function,y0,f_newton,norm)
             ag.a=a_new
             # run the corrector again
             (status,yc)=corrector( x->(-ag.g\f_newton(x)), y0, norm )
+        else
+            info("Converged using old jacobian")
         end
     end
 
