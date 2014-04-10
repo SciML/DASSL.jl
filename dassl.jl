@@ -67,7 +67,7 @@ function stepper(t,y,h,F,g_old,a_old,rtol,atol)
     f_newton(x)=F(t_next,x,a*x+b)
 
     # if called, this function computes the current jacobian (G-function)
-    g_new()=G(ed->f_newton(y0+ed),delta)
+    g_new()=G(f_newton,y0,delta)
     a_new=a
 
     # the norm used to test convergence of the newton method
@@ -212,13 +212,13 @@ function dassl_norm(v,y,rtol,atol)
 end
 
 # compute the G matrix from dassl
-function G(f,delta)
+function G(f,y0,delta)
     info("Recalculating the jacobian")
-    n=length(delta)
+    n=length(y0)
     edelta=diagm(delta)
     s=Array(eltype(delta),n,n)
     for i=1:n
-        s[:,i]=(f(edelta[:,i])-f(0))/delta[i]
+        s[:,i]=(f(y0+edelta[:,i])-f(y0))/delta[i]
     end
     return(s)
 end
