@@ -21,15 +21,17 @@ function stepper(t,y,h,F,g_old,a_old,rtol,atol)
     l        = size(y,1)
     T        = eltype(y)
 
-    psi      = cumsum(h[end:-1:1])   # length(psi)=k+1
-    psi_old  = cumsum(h[end-1:-1:1]) # length(psi_old)=k
+    if k <= 0 | k>=6
+        error("Order k=$(k) should be 1<=k<=5")
+        return(-1)
+    end
+
+    psi      = cumsum(h[end:-1:1])
     alpha    = h[end]/psi
-    beta     = float([ reduce(*,psi[1:i-1]./psi_old[1:i-1]) for i=1:k+1 ])
-    phi      = float([ reduce(*,psi_old[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
-    phi_star = [ beta[i]*phi[j,i] for j=1:l, i=1:k+1]
+    phi_star   = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
     gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
     alpha0   =-sum(alpha[1:k])
-    alphas=-sum([1/j for j=1:k])
+    alphas   =-sum([1/j for j=1:k])
 
     h_next=h[end]
     t_next=t+h_next
@@ -143,6 +145,8 @@ function corrector(f,y0,norm)
 
         if rho > 9/10
             status=-1
+
+            info("Unable to converge after $(i) iterations, rho=$(rho)")
             return(status,y0)
         end
 
@@ -159,6 +163,8 @@ function corrector(f,y0,norm)
     end
 
     # unable to converge after 4 iterations
+
+    info("Unable to converge after 4 iterations")
 
     status=-1
     return(status,y0)

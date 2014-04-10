@@ -14,7 +14,7 @@ function sol(t)
     exp(t)
 end
 
-t=float([j*dh for j=0:k])
+t=float([j*dh for j=1:k+1])
 y=hcat(map(sol,t)...)
 h=[diff(t), dh]
 y0=y[:,end]
