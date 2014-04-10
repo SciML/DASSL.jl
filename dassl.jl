@@ -5,27 +5,29 @@
 
 module dassl
 
-export dummy, G
+export stepper
 
 # h=[         h_{n-k+1},    ...   ,                h_{n},       h_{n+1}] --- length = k+1
 # y=[y_{n-k},            y_{n-k+1}, ... , y_{n-1},        y_{n}        ] --- length = k+1
 # k is the order of BDF
-# size(h)=k+2, size(y)=k+1
 # for reference see p. 119
-function dummy(t,y,h,F,g_old,a_old,rtol,atol)
+function stepper(t,y,h,F,g_old,a_old,rtol,atol)
     if size(y,2) != length(h)
         error("Incompatible size of h and y")
-        return(0)
+        return(-1)
     end
 
     k        = length(h)-1
+    l        = size(y,1)
+    T        = eltype(y)
 
     psi      = cumsum(h[end:-1:1])   # length(psi)=k+1
     psi_old  = cumsum(h[end-1:-1:1]) # length(psi_old)=k
     alpha    = h[end]/psi
-    beta     = vcat(1,cumprod(psi[1:end-2]./psi_old[1:end-1]))
-    phi_star = [ beta[1]*y[:,end] hcat([beta[i]*prod(psi_old[1:i-1])*divided_differences(h[end-i+1:end-1],y[:,end-i+1:end]) for i=2:k]...)]
-    gamma    = cumsum( [i==1 ? zero(eltype(y)) : alpha[i-1]/h[end] for i=1:k] )
+    beta     = float([ reduce(*,psi[1:i-1]./psi_old[1:i-1]) for i=1:k+1 ])
+    phi      = float([ reduce(*,psi_old[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
+    phi_star = [ beta[i]*phi[j,i] for j=1:l, i=1:k+1]
+    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
     alpha0   =-sum(alpha[1:k])
     alphas=-sum([1/j for j=1:k])
 
@@ -41,15 +43,16 @@ function dummy(t,y,h,F,g_old,a_old,rtol,atol)
 
     # delta for approximation of jacobian
     delta = sqrt(eps(t))*float([ sign(h_next*dy0[j])*max(abs(y0[j]),
-                                                           abs(h_next*dy0[j]),
-                                                           (rtol*y0+atol)[j])
-                                  for j=1:length(y0)])
+                                                         abs(h_next*dy0[j]),
+                                                         (rtol*y0+atol)[j])
+                                  for j=1:l])
+
     # if called, this function computes the current jacobian (G-function)
     g_new()=G(ed->F(t,y0+ed,dy0+a*ed),delta)
     a_new=a
 
     # the norm used to test convergence of the newton method
-    current_norm(v)=dassl_norm(v,y0,rtol,atol)
+    norm(v)=dassl_norm(v,y0,rtol,atol)
 
     # we compute the corrected value "yc", recomputing the gradient if necessary
     (status,yc)=corrector_wrapper!(a_old, # old coefficient a
@@ -58,14 +61,21 @@ function dummy(t,y,h,F,g_old,a_old,rtol,atol)
                                    g_new, # this function is called when new jacobian is needed
                                    y0, # starting point for modified newton
                                    f_newton, # we want to find zeroes of this function
-                                   current_norm) # the norm used to estimate error
+                                   norm) # the norm used to estimate error
 
-    M   = max(alpha[k+1],abs(alpha[k+1]+alphas-alpha0))
+    M   = max(alpha[k],abs(alpha[k]+alphas-alpha0))
     err = dassl_norm(yc-y0,y0,rtol,atol)*M
 
-    if err > 1
-       warn("Rejecting step")
-    end
+    # status<0 means the modified Newton method did not converge
+    # err is the local error estimate from taking the step
+    # yc is the estimated value at the next step
+    return (status, err, yc)
+
+    # sigma    = [i==1 ? one(eltype(y)) : h[end]^i*factorial(i-1)/prod(psi[1:i]) for i=1:(k+1) ]
+    # terkm2=norm((k-1)*sigma[k-1]*phi[:,k])
+    # terkm1=norm(k*sigma[k]*phi[:,k+1])
+    # terk  =norm((k+1)*sigma[k+1]*phi[k+2])
+    # terkp1=norm(phi[k+3])
 
 end
 
@@ -84,7 +94,7 @@ function corrector_wrapper!(a_new,a_old,g_old,g_new::Function,y0,f_newton,norm)
         (status,yc)=corrector( x->(-g_old\f_newton(x)), y0, norm)
     else
         # old jacobian should give reasonable convergence
-        c=2*a_old/(a+a_old)         # factor "c" is used to speed up
+        c=2*a_old/(a_new+a_old)     # factor "c" is used to speed up
                                     # the convergence when using an
                                     # old jacobian
         # reusing the old jacobian
@@ -157,22 +167,26 @@ end
 
 function predictor(phi_star,gamma)
     k=length(gamma)
+    l=size(phi_star,1)
     y0       = sum(phi_star,2)[:,1]
-    dy0      = sum(hcat([gamma[i]*phi_star[:,i] for i=1:k]...),2)[:,1]
+    dy0      = sum([gamma[i]*phi_star[j,i] for j=1:l, i=1:k],2)[:,1]
     return(y0,dy0)
 end
 
-
 # h=[h_{n-k}, ... , h_{n-1}]
 # y=[y_{n-k}, ... , y_{n-1}, y_{n}]
-function divided_differences(h,y)
-    if size(y,2) == 2
-        return((y[:,2]-y[:,1])/h[1])
+function div_diff(h,y)
+    if length(y) < 1
+        error("length(y) is $(length(y)) in div_diff, should be >=1")
+        return(zero(eltype(y)))
+    elseif length(y) == 1
+        return(y[1])
+    elseif length(y) == 2
+        return((y[2]-y[1])/h[1])
     else
-        return((divided_differences(h[2:end],y[:,2:end])-divided_differences(h[1:end-1],y[:,1:end-1]))/sum(h))
+        return((div_diff(h[2:end],y[2:end])-div_diff(h[1:end-1],y[1:end-1]))/sum(h))
     end
 end
-
 
 function dassl_norm(v,y,rtol,atol)
     norm(v/(rtol*abs(y)+atol))/sqrt(length(v))
@@ -180,7 +194,7 @@ end
 
 # compute the G matrix from dassl
 function G(f,delta)
-    info("Recalculating jacobian")
+    info("Recalculating the jacobian")
     n=length(delta)
     edelta=diagm(delta)
     s=Array(eltype(delta),n,n)
