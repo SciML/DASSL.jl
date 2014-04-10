@@ -1,8 +1,8 @@
 using dassl
 
 # number of previously known steps
-k=1
-dh=0.01
+ord=1
+dh=0.00001
 rtol=0.001
 atol=0.001
 
@@ -14,7 +14,7 @@ function sol(t)
     exp(t)
 end
 
-t=float([j*dh for j=1:k+1])
+t=float([j*dh for j=1:ord])
 y=hcat(map(sol,t)...)
 h=[diff(t), dh]
 y0=y[:,end]

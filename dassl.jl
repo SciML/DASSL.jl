@@ -17,40 +17,57 @@ function stepper(t,y,h,F,g_old,a_old,rtol,atol)
         return(-1)
     end
 
-    k        = length(h)-1
+    k        = length(h)-1      # k from the book is _not_ the order
+                                # of the BDF method
+    ord      = k+1              # this is the true order of BDF method
     l        = size(y,1)
     T        = eltype(y)
+    h_next=h[end]
+    t_next=t+h_next
 
-    if k <= 0 | k>=6
-        error("Order k=$(k) should be 1<=k<=5")
+    # this stepper does not work for order 1 bdf method, when
+    # predictor is undefined
+    if ord < 1 | ord > 6
+
+        error("Order ord=$(ord) should be [1,2,...,6]")
         return(-1)
+
     end
 
     psi      = cumsum(h[end:-1:1])
     alpha    = h[end]/psi
-    phi_star   = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
-    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
     alpha0   =-sum(alpha[1:k])
     alphas   =-sum([1/j for j=1:k])
 
-    h_next=h[end]
-    t_next=t+h_next
+    if ord > 1                  # use fixed leading coefficient BDF
+        phi_star   = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
+        gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
+        (y0,dy0)=predictor(phi_star,gamma)
+        a=-alphas/h_next
+        b=dy0-a*y0
 
-    (y0,dy0)=predictor(phi_star,gamma)
-    a=-alphas/h_next
-    b=dy0-a*y0
+        # delta for approximation of jacobian
+        delta = sqrt(eps(t))*float([ sign(h_next*dy0[j])*max(abs(y0[j]),
+                                                             abs(h_next*dy0[j]),
+                                                             (rtol*y0+atol)[j])
+                                    for j=1:l])
+
+    elseif ord == 1             # use Backwards Newton
+        a=1/h[end]
+        b=-y[:,end]/h[end]
+        y0=y
+
+        # delta for approximation of jacobian
+        # @todo I don't know if it works
+        delta = sqrt(eps(t))*float([ max(abs(y0[j]),(rtol*y0+atol)[j])
+                                    for j=1:l])
+    end
 
     # this function is supplied to the modified Newton method
     f_newton(x)=F(t_next,x,a*x+b)
 
-    # delta for approximation of jacobian
-    delta = sqrt(eps(t))*float([ sign(h_next*dy0[j])*max(abs(y0[j]),
-                                                         abs(h_next*dy0[j]),
-                                                         (rtol*y0+atol)[j])
-                                  for j=1:l])
-
     # if called, this function computes the current jacobian (G-function)
-    g_new()=G(ed->F(t,y0+ed,dy0+a*ed),delta)
+    g_new()=G(ed->f_newton(y0+ed),delta)
     a_new=a
 
     # the norm used to test convergence of the newton method
@@ -65,19 +82,15 @@ function stepper(t,y,h,F,g_old,a_old,rtol,atol)
                                    f_newton, # we want to find zeroes of this function
                                    norm) # the norm used to estimate error
 
-    M   = max(alpha[k],abs(alpha[k]+alphas-alpha0))
+    # @todo I don't know if this error estimate still holds for
+    # backwards Euler (when ord==1)
+    M   = max(alpha[k+1],abs(alpha[k+1]+alphas-alpha0))
     err = dassl_norm(yc-y0,y0,rtol,atol)*M
 
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
     # yc is the estimated value at the next step
     return (status, err, yc)
-
-    # sigma    = [i==1 ? one(eltype(y)) : h[end]^i*factorial(i-1)/prod(psi[1:i]) for i=1:(k+1) ]
-    # terkm2=norm((k-1)*sigma[k-1]*phi[:,k])
-    # terkm1=norm(k*sigma[k]*phi[:,k+1])
-    # terk  =norm((k+1)*sigma[k+1]*phi[k+2])
-    # terkp1=norm(phi[k+3])
 
 end
 
