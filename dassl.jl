@@ -1,15 +1,15 @@
 module dassl
 
-export driver
+export driver, stepper!, AG
 
-const MAXORDER = 2
+const MAXORDER = 6
 
 type AG
     a
     g
 end
 
-function driver(F,y0,tspan; rtol = 1.0e-5, atol = 1.0e-5, h0 = 0.01)
+function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
@@ -28,85 +28,89 @@ function driver(F,y0,tspan; rtol = 1.0e-5, atol = 1.0e-5, h0 = 0.01)
     h   = [h0]
     y   = hcat(y0)
     er  = [0.0]
+    nf  = [0]
     num_fail=0
 
     while t[end] < t_stop
 
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
         hn   = h[end]
+        ordn = ord[end]
 
         if hn < 2*hmin
             error("Stepsize too small, aborting")
             break
         end
 
-        ordn=ord[end]
+        wt = rtol*abs(y[:,end])+atol
+        (status,err,yn)=stepper!(t[end],y[:,end-ordn+1:end],h[end-ordn+1:end],F,ag,wt)
 
-        (status,err,yn)=stepper!(t[end],y[:,end-ordn+1:end],h[end-ordn+1:end],F,ag,rtol,atol)
-
-        # Newton iteration failed, reduce the step size and try again
+        # Early failure: Newton iteration failed to converge, reduce
+        # the step size and try again
         if status < 0
-            warn("Newton iteration was unable to converge, reducing step size")
+            warn("Newton iteration was unable to converge, reducing step size and trying again")
             h[end]=3/4*hn
             continue
         end
 
-        # keep track of the number of failed steps
-        if err > 1
-            num_fail = num_fail+1
-        end
-
-        # determine the new step size and order
-        (hn,ordn)=newStepOrder(h,[y yn],rtol,atol,ordn,num_fail)
-
-        # reject the step and continue with new step size
-        if err > 1
+        if err > 1.0
+            # step is rejected, change the current step size and order and try again
             warn("Step rejected: estimated error=$(err) is too large, h=$(h[end])")
+
             num_fail = num_fail+1
+            # determine the new step size and order
+            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail,err)
+            # ordn=min(MAXORDER,length(h))
             h[end]   = hn
             ord[end] = ordn
             continue
-        end
 
-        if length(h) > 40
-            break
-        end
+        else
+            # step is accepted
 
-        num_fail=0              # reset the failure counter
-        ord = [ord, ordn]
-        h   = [h,   hn]
-        t   = [t,   t[end]+h[end]]
-        y   = [y   yn]
-        er  = [er, err]
+            # determine the new step size and order
+            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail,err)
+            # ordn=min(MAXORDER,length(h))
+            # save the results
+            ord = [ord, ordn]
+            h   = [h,   hn]
+            t   = [t,   t[end]+hn]
+            y   = [y   yn]
+            er  = [er, err]
+            nf  = [nf, num_fail]
+            num_fail=0              # reset the failure counter
+        end
 
     end
+
+    s=open("yn.dat", "w+")
+    for i = 1 : size(y,2)
+        @printf(s,"%.15f, %.15f, %.15f, %.15f, %i, %i\n",t[i], y[1,i], er[i], h[i], ord[i], nf[i])
+    end
+    close(s)
 
     return(ord,h,t,y,er)
 
 end
 
-function newStepOrder(h,y,rtol,atol,ord_old,num_fail)
+function newStepOrder(h,y,wt,ord_old,num_fail,err)
 
     k = ord_old
     hn = h[end]
 
-    if num_fail >= 0            # don't decrease the step size
-        hn = 3/4*hn
-    end
-
     # we cannot increse order if there is not enough previous steps
     if length(h) <= k
-        return(hn,ord_old)
+        return(hn,k)
     end
 
-    # if the order is lower than three increase it
+    # if the order is lower than three, we cannot estimate the  increase it
     if ord_old < 3
         return(hn,ord_old+1)
     end
 
     l = size(y,1)
 
-    norm(v) = dassl_norm(v,y[:,end],rtol,atol)
+    norm(v) = dassl_norm(v,wt)
 
     # @todo this assumption comes from the BoundsError coming from the
     # code below
@@ -181,7 +185,7 @@ end
 # y=[y_{n-k},            y_{n-k+1}, ... , y_{n-1},        y_{n}        ] --- length = k+1
 # k is the order of BDF
 # for reference see p. 119
-function stepper!(t,y,h,F,ag,rtol,atol)
+function stepper!(t,y,h,F,ag,wt)
 
     k        = length(h)-1      # k from the book is _not_ the order
                                 # of the BDF method
@@ -206,57 +210,64 @@ function stepper!(t,y,h,F,ag,rtol,atol)
     h_next   = h[end]
     t_next   = t+h_next
 
+    # these parameters are used by the predictor method
     psi      = cumsum(h[end:-1:1])
     alpha    = h[end]/psi
     alpha0   =-sum(alpha[1:k])
-    alphas   =-sum([1/j for j=1:k])
+    phi_star = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
+    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
+    # there is an error in the book, the sum should be taken from j=1
+    # to k+1 instead of j=1 to k
+    alphas = -sum([1/j for j=1:k+1])
 
-    if ord > 1                  # use fixed leading coefficient predictor/corrector BDF
-        phi_star   = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
-        gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
-        (y0,dy0)=predictor(phi_star,gamma)
-        a=-alphas/h_next
-        b=dy0-a*y0
+    # we use predictor to obtain the starting point for the modified
+    # newton method
+    (y0,dy0)=predictor(phi_star,gamma)
 
-        # delta for approximation of jacobian
-        delta = sqrt(eps(T))*float([ sign(h_next*dy0[j])*max(abs(y0[j]),
-                                                             abs(h_next*dy0[j]),
-                                                             (rtol*y0+atol)[j])
-                                    for j=1:l])
+    a=-alphas/h_next
+    b=dy0-a*y0
 
-    elseif ord == 1             # use Backwards Newton
-        a=1/h[end]
-        b=-y[:,end]/h[end]
-        y0=y[:,end]
+    # delta for approximation of jacobian.  I removed the
+    # sign(h_next*dy0) from the definition of delta because it was
+    # causing trouble when dy0==0
+    delta = sqrt(eps(T))*float([ max(abs(y0[j]),
+                                     abs(h_next*dy0[j]),
+                                     wt[j])
+                                for j=1:l])
 
-        # delta for approximation of jacobian
-        # @todo I don't know if it works
-        delta = sqrt(eps(T))*float([ max(abs(y0[j]),(rtol*y0+atol)[j])
-                                    for j=1:l])
+    # delta can't be zero, if it is we can't continue
+    if any(delta.==0)
+        error("delta==0")
     end
 
-    # this function is supplied to the modified Newton method
-    f_newton(x)=F(t_next,x,a*x+b)
+    # this function is supplied to the modified Newton method.  Zeroes
+    # of f_newton give the corrected value of the next step "yc"
+    f_newton(yc)=F(t_next,yc,a*yc+b)
 
-    # if called, this function computes the current jacobian (G-function)
+    # if called, this function computes the jacobian of f_newton at
+    # the point y0
     g_new()=G(f_newton,y0,delta)
+
+    # this is the updated value of coefficient a, if jacobian is
+    # udpated corrector will replace ag.a with a_new
     a_new=a
 
-    # the norm used to test convergence of the newton method
-    norm(v)=dassl_norm(v,y0,rtol,atol)
+    # the norm used to test convergence of the newton method.  The
+    # norm depends on the current values of solution y0.
+    norm(v)=dassl_norm(v,wt)
 
     # we compute the corrected value "yc", recomputing the gradient if necessary
-    (status,yc)=corrector_wrapper!(ag, # old coefficient a
-                                   a_new, # current coefficient a
-                                   g_new, # this function is called when new jacobian is needed
-                                   y0, # starting point for modified newton
-                                   f_newton, # we want to find zeroes of this function
-                                   norm) # the norm used to estimate error
+    (status,yc)=corrector(ag,       # old coefficient a and jacobian
+                          a_new,    # current coefficient a
+                          g_new,    # this function is called when new jacobian is needed
+                          y0,       # starting point for modified newton
+                          f_newton, # we want to find zeroes of this function
+                          norm)     # the norm used to estimate error
 
     # @todo I don't know if this error estimate still holds for
     # backwards Euler (when ord==1)
     M   = max(alpha[k+1],abs(alpha[k+1]+alphas-alpha0))
-    err = dassl_norm(yc-y0,y0,rtol,atol)*M
+    err = norm(yc-y0)*M
 
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
@@ -269,7 +280,7 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector_wrapper!(ag,a_new,g_new::Function,y0,f_newton,norm)
+function corrector(ag,a_new,g_new::Function,y0,f_newton,norm)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -280,24 +291,22 @@ function corrector_wrapper!(ag,a_new,g_new::Function,y0,f_newton,norm)
         ag.g=g_new()
         ag.a=a_new
         # run the corrector
-        (status,yc)=corrector( x->(-ag.g\f_newton(x)), y0, norm)
+        (status,yc)=modified_newton( x->(-ag.g\f_newton(x)), y0, norm)
     else
         # old jacobian should give reasonable convergence
         c=2*ag.a/(a_new+ag.a)     # factor "c" is used to speed up
                                     # the convergence when using an
                                     # old jacobian
         # reusing the old jacobian
-        (status,yc)=corrector( x->(-c*(ag.g\f_newton(x))), y0, norm )
+        (status,yc)=modified_newton( x->(-c*(ag.g\f_newton(x))), y0, norm )
 
         if status < 0
-            info("Unable to converge using old jacobian")
+            info("Unable to converge with old jacobian")
             # the corrector did not converge, so we recompute jacobian and try again
             ag.g=g_new()
             ag.a=a_new
             # run the corrector again
-            (status,yc)=corrector( x->(-ag.g\f_newton(x)), y0, norm )
-        else
-            info("Converged using old jacobian")
+            (status,yc)=modified_newton( x->(-ag.g\f_newton(x)), y0, norm )
         end
     end
 
@@ -305,7 +314,7 @@ function corrector_wrapper!(ag,a_new,g_new::Function,y0,f_newton,norm)
 
 end
 
-function corrector(f,y0,norm)
+function modified_newton(f,y0,norm)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -335,7 +344,6 @@ function corrector(f,y0,norm)
 
         if rho > 9/10
             status=-1
-
             return(status,y0)
         end
 
@@ -380,11 +388,12 @@ function div_diff(h,y)
     end
 end
 
-function dassl_norm(v,y,rtol,atol)
-    norm(v/(rtol*abs(y)+atol))/sqrt(length(v))
+function dassl_norm(v,wt)
+    norm(v./wt)/sqrt(length(v))
 end
 
-# compute the G matrix from dassl
+# compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
+# @todo replace with symmetric finite difference?
 function G(f,y0,delta)
     info("Recalculating the jacobian")
     n=length(y0)
