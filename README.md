@@ -13,5 +13,3 @@ driver(F,y0,tspan) # returns plenty of intermediate info, at this point the stru
 
 So far it can adapt the order and step size but integration gives relatively large errors of unknown (at least to me) origin.
 At this point I am working on verifying the algorithm without focusing on performance.
-
-I would appreciate any advice/help.
