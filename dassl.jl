@@ -21,8 +21,6 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
     a = zero(T)
     ag=AG(a,g)
 
-    # make the next step with DASSL method
-
     ord = [1]
     t   = [t_start]
     h   = [h0]
@@ -42,7 +40,7 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
             break
         end
 
-        wt = rtol*abs(y[:,end])+atol
+        wt = rtol*abs(y[:,end]).+atol
         (status,err,yn)=stepper!(t[end],y[:,end-ordn+1:end],h[end-ordn+1:end],F,ag,wt)
 
         # Early failure: Newton iteration failed to converge, reduce
@@ -59,7 +57,7 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
             num_fail = num_fail+1
             # determine the new step size and order
-            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail,err)
+            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail)
             # ordn=min(MAXORDER,length(h))
             h[end]   = hn
             ord[end] = ordn
@@ -68,8 +66,9 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
         else
             # step is accepted
 
+            num_fail=0              # reset the failure counter
             # determine the new step size and order
-            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail,err)
+            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail)
             # ordn=min(MAXORDER,length(h))
             # save the results
             ord = [ord, ordn]
@@ -78,7 +77,6 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
             y   = [y   yn]
             er  = [er, err]
             nf  = [nf, num_fail]
-            num_fail=0              # reset the failure counter
         end
 
     end
@@ -93,7 +91,7 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
 end
 
-function newStepOrder(h,y,wt,ord_old,num_fail,err)
+function newStepOrder(h,y,wt,ord_old,num_fail)
 
     k = ord_old
     hn = h[end]
@@ -165,6 +163,7 @@ function newStepOrder(h,y,wt,ord_old,num_fail,err)
     # num_fail is the number of steps that failed before this step
     if num_fail == 0
         if r >= 2.0
+            info("step increased, r=$r")
             hn = 2*hn
         elseif r < 1.0
             r = max(0.5,min(r,0.9))
@@ -185,16 +184,24 @@ end
 # y=[y_{n-k},            y_{n-k+1}, ... , y_{n-1},        y_{n}        ] --- length = k+1
 # k is the order of BDF
 # for reference see p. 119
-function stepper!(t,y,h,F,ag,wt)
+function stepper!{T<:Number}(t  ::T,
+                             y  ::AbstractArray{T,2},
+                             h  ::AbstractArray{T,1},
+                             F  ::Function,
+                             ag ::AG,
+                             wt ::AbstractArray{T,1})
 
-    k        = length(h)-1      # k from the book is _not_ the order
-                                # of the BDF method
-    ord      = k+1              # this is the true order of BDF method
-
+    # sanity check
+    # @todo remove it in final version
     if size(y,2) != length(h)
         error("Incompatible size of h and y")
         return(-1)
     end
+
+    k        = length(h)-1      # k from the book is _not_ the order
+                                # of the BDF method
+    ord      = k+1              # this is the true order of BDF method
+    l        = size(y,1)        # the number of dependent variables
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
@@ -205,43 +212,52 @@ function stepper!(t,y,h,F,ag,wt)
 
     end
 
-    l        = size(y,1)
-    T        = eltype(y)
     h_next   = h[end]
     t_next   = t+h_next
 
+    #### relocate to the predictor?
+
     # these parameters are used by the predictor method
-    psi      = cumsum(h[end:-1:1])
-    alpha    = h[end]/psi
-    alpha0   =-sum(alpha[1:k])
-    phi_star = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end]) for j=1:l, i=1:k+1 ])
-    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
-    # there is an error in the book, the sum should be taken from j=1
-    # to k+1 instead of j=1 to k
-    alphas = -sum([1/j for j=1:k+1])
+    psi      = cumsum(h[end:-1:1]) # ok
+    alpha    = h[end]./psi         # ok
+
+    phi_star = zeros(T,l,ord)   # ok
+    for j=1:l, i = 1:ord
+        phi_star[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
+    end
+
+    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] ) # ok
+
+    #### END relocate to the predictor
 
     # we use predictor to obtain the starting point for the modified
     # newton method
-    (y0,dy0)=predictor(phi_star,gamma)
+    (y0,dy0)=predictor(phi_star,gamma) # ok
 
-    a=-alphas/h_next
-    b=dy0-a*y0
+    # I think there is an error in the book, the sum should be taken
+    # from j=1 to k+1 instead of j=1 to k
+    alphas = -sum([1/j for j=1:ord]) # ok
+
+    a=-alphas/h_next            # ok
+    b=dy0-a*y0                  # ok
 
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
-    # causing trouble when dy0==0
+    # causing trouble when dy0==0 (which happens for ord==1)
     delta = sqrt(eps(T))*float([ max(abs(y0[j]),
                                      abs(h_next*dy0[j]),
                                      wt[j])
                                 for j=1:l])
 
-    # delta can't be zero, if it is we can't continue
+    # This is a sanity check, if delta is zero we can't continue, this
+    # shouldn't happen though, so this test should be removed in the
+    # final version
     if any(delta.==0)
         error("delta==0")
     end
 
-    # this function is supplied to the modified Newton method.  Zeroes
-    # of f_newton give the corrected value of the next step "yc"
+    # f_newton is supplied to the modified Newton method.  Zeroes of
+    # f_newton give the corrected value of the next step "yc"
     f_newton(yc)=F(t_next,yc,a*yc+b)
 
     # if called, this function computes the jacobian of f_newton at
@@ -249,20 +265,23 @@ function stepper!(t,y,h,F,ag,wt)
     g_new()=G(f_newton,y0,delta)
 
     # this is the updated value of coefficient a, if jacobian is
-    # udpated corrector will replace ag.a with a_new
+    # udpated, corrector will replace ag.a with a_new
     a_new=a
 
     # the norm used to test convergence of the newton method.  The
-    # norm depends on the current values of solution y0.
+    # norm depends on the solution y0 through the weights wt.
     norm(v)=dassl_norm(v,wt)
 
-    # we compute the corrected value "yc", recomputing the gradient if necessary
+    # we compute the corrected value "yc", updating the gradient if necessary
     (status,yc)=corrector(ag,       # old coefficient a and jacobian
                           a_new,    # current coefficient a
                           g_new,    # this function is called when new jacobian is needed
                           y0,       # starting point for modified newton
                           f_newton, # we want to find zeroes of this function
                           norm)     # the norm used to estimate error
+
+    # alpha0 is needed to estimate error
+    alpha0   =-sum(alpha[1:k])
 
     # @todo I don't know if this error estimate still holds for
     # backwards Euler (when ord==1)
@@ -280,7 +299,7 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector(ag,a_new,g_new::Function,y0,f_newton,norm)
+function corrector{T<:Number}(ag::AG,a_new::T,g_new::Function,y0::AbstractArray{T,1},f_newton::Function,norm::Function)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -314,7 +333,7 @@ function corrector(ag,a_new,g_new::Function,y0,f_newton,norm)
 
 end
 
-function modified_newton(f,y0,norm)
+function modified_newton{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Function)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -365,7 +384,7 @@ function modified_newton(f,y0,norm)
 end
 
 
-function predictor(phi_star,gamma)
+function predictor{T<:Number}(phi_star::AbstractArray{T,2},gamma::AbstractArray{T,1})
     k=length(gamma)
     l=size(phi_star,1)
     y0       = sum(phi_star,2)[:,1]
@@ -375,26 +394,26 @@ end
 
 # h=[h_{n-k}, ... , h_{n-1}]
 # y=[y_{n-k}, ... , y_{n-1}, y_{n}]
-function div_diff(h,y)
+function div_diff{T<:Number}(h::AbstractArray{T,1},y::AbstractArray{T,1})
     if length(y) < 1
         error("length(y) is $(length(y)) in div_diff, should be >=1")
-        return(zero(eltype(y)))
+        return 0::T
     elseif length(y) == 1
-        return(y[1])
+        return y[1]::T
     elseif length(y) == 2
-        return((y[2]-y[1])/h[1])
+        return ((y[2]-y[1])/h[1])::T
     else
-        return((div_diff(h[2:end],y[2:end])-div_diff(h[1:end-1],y[1:end-1]))/sum(h))
+        return ((div_diff(h[2:end],y[2:end])-div_diff(h[1:end-1],y[1:end-1]))/sum(h))::T
     end
 end
 
-function dassl_norm(v,wt)
+function dassl_norm{T<:Number}(v::AbstractArray{T,1},wt::AbstractArray{T,1})
     norm(v./wt)/sqrt(length(v))
 end
 
 # compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
 # @todo replace with symmetric finite difference?
-function G(f,y0,delta)
+function G{T<:Number}(f::Function,y0::AbstractArray{T,1},delta::AbstractArray{T,1})
     info("Recalculating the jacobian")
     n=length(y0)
     edelta=diagm(delta)
