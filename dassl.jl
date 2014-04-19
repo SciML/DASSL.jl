@@ -191,17 +191,17 @@ function stepper!{T<:Number}(t  ::T,
                              ag ::AG,
                              wt ::AbstractArray{T,1})
 
+    k        = length(h)-1      # k from the book is _not_ the order
+                                # of the BDF method
+    ord      = k+1              # this is the true order of BDF method
+    l        = size(y,1)        # the number of dependent variables
+
     # sanity check
     # @todo remove it in final version
     if size(y,2) != length(h)
         error("Incompatible size of h and y")
         return(-1)
     end
-
-    k        = length(h)-1      # k from the book is _not_ the order
-                                # of the BDF method
-    ord      = k+1              # this is the true order of BDF method
-    l        = size(y,1)        # the number of dependent variables
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
@@ -215,24 +215,9 @@ function stepper!{T<:Number}(t  ::T,
     h_next   = h[end]
     t_next   = t+h_next
 
-    #### relocate to the predictor?
-
-    # these parameters are used by the predictor method
-    psi      = cumsum(h[end:-1:1]) # ok
-    alpha    = h[end]./psi         # ok
-
-    phi_star = zeros(T,l,ord)   # ok
-    for j=1:l, i = 1:ord
-        phi_star[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
-    end
-
-    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] ) # ok
-
-    #### END relocate to the predictor
-
     # we use predictor to obtain the starting point for the modified
     # newton method
-    (y0,dy0)=predictor(phi_star,gamma) # ok
+    (y0,dy0,alpha)=predictor(y,h) # ok
 
     # I think there is an error in the book, the sum should be taken
     # from j=1 to k+1 instead of j=1 to k
@@ -384,12 +369,32 @@ function modified_newton{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Fun
 end
 
 
-function predictor{T<:Number}(phi_star::AbstractArray{T,2},gamma::AbstractArray{T,1})
-    k=length(gamma)
-    l=size(phi_star,1)
+function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
+    k        = length(h)-1      # k from the book is _not_ the order
+                                # of the BDF method
+    ord      = k+1              # this is the true order of BDF method
+    l        = size(y,1)        # the number of dependent variables
+
+    #### relocate to the predictor?
+
+    # these parameters are used by the predictor method
+    psi      = cumsum(h[end:-1:1]) # ok
+    alpha    = h[end]./psi         # ok
+
+    phi_star = zeros(T,l,ord)   # ok
+    for j=1:l, i = 1:ord
+        phi_star[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
+    end
+
+    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] ) # ok
+
+    #### END relocate to the predictor
+
     y0       = sum(phi_star,2)[:,1]
     dy0      = sum([gamma[i]*phi_star[j,i] for j=1:l, i=1:k],2)[:,1]
-    return(y0,dy0)
+
+    # alpha is neede by the stepper method to estimate error
+    return(y0,dy0,alpha)
 end
 
 # h=[h_{n-k}, ... , h_{n-1}]
