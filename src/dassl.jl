@@ -137,12 +137,14 @@ function newStepOrder(h,y,wt,ord_old,num_fail)
 
     difs = diff(seq)
 
-    # if sequence is decreasing
+    # sequence is decreasing => increase order
     if all(difs .< 0)
         ordn = min(ord_old+1,MAXORDER)
+        # increasing => decrease order
     elseif all(difs .> 0)
         ordn = ord_old-1
     else
+        # otherwise => don't change order
         ordn = ord_old
     end
 
@@ -188,7 +190,7 @@ function stepper!{T<:Number}(t  ::T,
                              y  ::AbstractArray{T,2},
                              h  ::AbstractArray{T,1},
                              F  ::Function,
-                             ag ::AG,
+                             ag ::AG, # @todo use AG{T}
                              wt ::AbstractArray{T,1})
 
     k        = length(h)-1      # k from the book is _not_ the order
@@ -246,7 +248,7 @@ function stepper!{T<:Number}(t  ::T,
     f_newton(yc)=F(t_next,yc,a*yc+b)
 
     # if called, this function computes the jacobian of f_newton at
-    # the point y0
+    # the point y0 via first order finite differences
     g_new()=G(f_newton,y0,delta)
 
     # this is the updated value of coefficient a, if jacobian is
@@ -284,7 +286,12 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T<:Number}(ag::AG,a_new::T,g_new::Function,y0::AbstractArray{T,1},f_newton::Function,norm::Function)
+function corrector{T<:Number}(ag::AG,
+                              a_new::T,
+                              g_new::Function,
+                              y0::AbstractArray{T,1},
+                              f_newton::Function,
+                              norm::Function)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -318,6 +325,10 @@ function corrector{T<:Number}(ag::AG,a_new::T,g_new::Function,y0::AbstractArray{
 
 end
 
+# this function iterates f until it finds its fixed point, starting
+# from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
+# set back to y0.  Status tells if the fixed point was obtained
+# (status==0) or not (status==-1).
 function modified_newton{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Function)
 
     # first guess comes from the predictor method, then we compute the
@@ -330,7 +341,7 @@ function modified_newton{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Fun
     # after the first iteration the norm turned out to be very small,
     # terminate and return the first correction step
 
-    if norm1 < 10*eps(norm1)
+    if norm1 < 10*eps(T)
         status=0
         return(status,yn)
     end
@@ -378,15 +389,15 @@ function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
     #### relocate to the predictor?
 
     # these parameters are used by the predictor method
-    psi      = cumsum(h[end:-1:1]) # ok
-    alpha    = h[end]./psi         # ok
+    psi      = cumsum(h[end:-1:1])
+    alpha    = h[end]./psi
 
-    phi_star = zeros(T,l,ord)   # ok
+    phi_star = zeros(T,l,ord)
     for j=1:l, i = 1:ord
         phi_star[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
     end
 
-    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] ) # ok
+    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
 
     #### END relocate to the predictor
 
