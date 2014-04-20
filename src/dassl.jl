@@ -4,9 +4,9 @@ export driver
 
 const MAXORDER = 6
 
-type AG
-    a
-    g
+type StepperStuff{T<:Number}
+    a :: T
+    g :: AbstractArray{T,2}
 end
 
 function driver{T<:Number}(F             :: Function,
@@ -19,55 +19,69 @@ function driver{T<:Number}(F             :: Function,
     t_start = tspan[1]
     t_stop  = tspan[end]
 
-    epsilon = eps(one(T))
-
+    # we allocate the space for Jacobian of a function F(t,y,a*y+b)
+    # with a and b defined in the stepper!
     g = zeros(T,length(y0),length(y0))
+    # The parameter a has to be kept between consecutive calls of
+    # stepper!
     a = zero(T)
-    ag=AG(a,g)
+    # zip the stepper temporary variables in a type
+    stuff = StepperStuff(a,g)
 
-    ordn     = 1                    # initial method order
-    t        = [t_start]
-    h_next   = h0
-    y        = hcat(y0)
-    num_fail = 0
+    ord      = 1                    # initial method order
+    t        = [t_start]            # initial time
+    h        = h0                   # current step size
+    y        = hcat(y0)             # initial data
+    num_fail = 0                    # number of consecutive failures
 
     while t[end] < t_stop
 
+        epsilon = eps(one(T))
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
-        if h_next < 2*hmin
-            error("Stepsize too small, aborting")
+        if h < hmin
+            warn("Stepsize too small (h=$h).")
             break
         end
 
+        # weights for the norm
         wt = rtol*abs(y[:,end]).+atol
-        (status,err,yn)=stepper!(t[end-ordn+1:end],y[:,end-ordn+1:end],h_next,F,ag,wt)
+        # norm used to determine the local error of the numerical
+        # solution
+        dassl_norm(v)=norm(v./wt)/sqrt(length(v))
 
-        # Early failure: Newton iteration failed to converge, reduce
-        # the step size and try again
+        (status,err,yn)=stepper!(t[end-ord+1:end],y[:,end-ord+1:end],h,F,stuff,wt)
+
         if status < 0
-            warn("Newton iteration was unable to converge, reducing step size and trying again")
-            h_next = 3/4*h_next
+            # Early failure: Newton iteration failed to converge, reduce
+            # the step size and try again
+
+            # increase the failure counter
+            num_fail = num_fail+1
+            # reduce the step by 25%
+            h = 3/4*h
             continue
-        end
 
-        if err > 1.0
-            # step is rejected, change the current step size and order and try again
-            warn("Step rejected: estimated error=$(err) is too large, h=$(h_next)")
+        elseif err > 1.0
+            err > 1.0
+            # local error is too large.  Step is rejected, and we try
+            # again with new step size and order.
 
+            # increase the failure counter
             num_fail = num_fail+1
             # determine the new step size and order
-            (h_next,ordn)=newStepOrder([t, t[end]+h_next],[y yn],wt,ordn,num_fail)
+            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
             continue
 
         else
             # step is accepted
 
-            num_fail=0              # reset the failure counter
+            # reset the failure counter
+            num_fail=0
             # determine the new step size and order
-            (h_next,ordn)=newStepOrder([t, t[end]+h_next],[y yn],wt,ordn,num_fail)
+            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
             # save the results
-            t   = [t,   t[end]+h_next]
+            t   = [t,  t[end]+h]
             y   = [y   yn]
         end
 
@@ -79,7 +93,7 @@ end
 
 function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
                                  y        :: AbstractArray{T,2},
-                                 wt       :: AbstractArray{T,1},
+                                 norm     :: Function,
                                  ord_old  :: Integer,
                                  num_fail :: Integer)
 
@@ -98,8 +112,6 @@ function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
     end
 
     l = size(y,1)
-
-    norm(v) = dassl_norm(v,wt)
 
     # @todo this assumption comes from the BoundsError coming from the
     # code below
@@ -162,7 +174,6 @@ function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
     # num_fail is the number of steps that failed before this step
     if num_fail == 0
         if r >= 2.0
-            info("step increased, r=$r")
             hn = 2*hn
         elseif r < 1.0
             r = max(0.5,min(r,0.9))
@@ -187,7 +198,7 @@ function stepper!{T<:Number}(t      :: AbstractArray{T,1},
                              y      :: AbstractArray{T,2},
                              h_next :: T,
                              F      :: Function,
-                             ag     :: AG, # @todo use AG{T}
+                             stuff  :: StepperStuff{T},
                              wt     :: AbstractArray{T,1})
 
     ord      = length(t)        # this is the true order of BDF method
@@ -250,7 +261,7 @@ function stepper!{T<:Number}(t      :: AbstractArray{T,1},
     g_new()=G(f_newton,y0,delta)
 
     # this is the updated value of coefficient a, if jacobian is
-    # udpated, corrector will replace ag.a with a_new
+    # udpated, corrector will replace stuff.a with a_new
     a_new=a
 
     # the norm used to test convergence of the newton method.  The
@@ -258,7 +269,7 @@ function stepper!{T<:Number}(t      :: AbstractArray{T,1},
     norm(v)=dassl_norm(v,wt)
 
     # we compute the corrected value "yc", updating the gradient if necessary
-    (status,yc)=corrector(ag,       # old coefficient a and jacobian
+    (status,yc)=corrector(stuff,    # old coefficient a and jacobian
                           a_new,    # current coefficient a
                           g_new,    # this function is called when new jacobian is needed
                           y0,       # starting point for modified newton
@@ -284,7 +295,7 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T<:Number}(ag::AG,
+function corrector{T<:Number}(stuff::StepperStuff{T},
                               a_new::T,
                               g_new::Function,
                               y0::AbstractArray{T,1},
@@ -293,29 +304,27 @@ function corrector{T<:Number}(ag::AG,
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
-    if abs((ag.a-a_new)/(ag.a+a_new)) > 1/4
-        info("Estimated convergence too slow: a_old=$(ag.a), a_new=$a_new")
+    if abs((stuff.a-a_new)/(stuff.a+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
-        ag.g=g_new()
-        ag.a=a_new
+        stuff.g=g_new()
+        stuff.a=a_new
         # run the corrector
-        (status,yc)=modified_newton( x->(-ag.g\f_newton(x)), y0, norm)
+        (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, norm)
     else
         # old jacobian should give reasonable convergence
-        c=2*ag.a/(a_new+ag.a)     # factor "c" is used to speed up
+        c=2*stuff.a/(a_new+stuff.a)     # factor "c" is used to speed up
                                     # the convergence when using an
                                     # old jacobian
         # reusing the old jacobian
-        (status,yc)=modified_newton( x->(-c*(ag.g\f_newton(x))), y0, norm )
+        (status,yc)=newton_iteration( x->(-c*(stuff.g\f_newton(x))), y0, norm )
 
         if status < 0
-            info("Unable to converge with old jacobian")
             # the corrector did not converge, so we recompute jacobian and try again
-            ag.g=g_new()
-            ag.a=a_new
+            stuff.g=g_new()
+            stuff.a=a_new
             # run the corrector again
-            (status,yc)=modified_newton( x->(-ag.g\f_newton(x)), y0, norm )
+            (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, norm )
         end
     end
 
@@ -327,7 +336,7 @@ end
 # from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function modified_newton{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Function)
+function newton_iteration{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Function)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -424,7 +433,6 @@ end
 # compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
 # @todo replace with symmetric finite difference?
 function G{T<:Number}(f::Function,y0::AbstractArray{T,1},delta::AbstractArray{T,1})
-    info("Recalculating the jacobian")
     n=length(y0)
     edelta=diagm(delta)
     s=Array(eltype(delta),n,n)
