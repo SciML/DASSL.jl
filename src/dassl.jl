@@ -1,6 +1,6 @@
 module dassl
 
-export driver, stepper!, AG
+export driver
 
 const MAXORDER = 6
 
@@ -9,54 +9,55 @@ type AG
     g
 end
 
-function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
+function driver{T<:Number}(F             :: Function,
+                           y0            :: AbstractArray{T,1},
+                           tspan         :: AbstractArray{T,1};
+                           rtol = 1.0e-3 :: T,
+                           atol = 1.0e-3 :: T,
+                           h0   = 1.0e-4 :: T)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
 
-    T       = eltype(y0)
     epsilon = eps(one(T))
 
     g = zeros(T,length(y0),length(y0))
     a = zero(T)
     ag=AG(a,g)
 
-    ordn = 1                    # initial method order
-    t   = [t_start]
-    h   = [h0]
-    y   = hcat(y0)
-    nf  = [0]
-    num_fail=0
+    ordn     = 1                    # initial method order
+    t        = [t_start]
+    h_next   = h0
+    y        = hcat(y0)
+    num_fail = 0
 
     while t[end] < t_stop
 
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
-        hn   = h[end]
 
-        if hn < 2*hmin
+        if h_next < 2*hmin
             error("Stepsize too small, aborting")
             break
         end
 
         wt = rtol*abs(y[:,end]).+atol
-        (status,err,yn)=stepper!(t[end],y[:,end-ordn+1:end],h[end-ordn+1:end],F,ag,wt)
+        (status,err,yn)=stepper!(t[end-ordn+1:end],y[:,end-ordn+1:end],h_next,F,ag,wt)
 
         # Early failure: Newton iteration failed to converge, reduce
         # the step size and try again
         if status < 0
             warn("Newton iteration was unable to converge, reducing step size and trying again")
-            h[end]=3/4*hn
+            h_next = 3/4*h_next
             continue
         end
 
         if err > 1.0
             # step is rejected, change the current step size and order and try again
-            warn("Step rejected: estimated error=$(err) is too large, h=$(h[end])")
+            warn("Step rejected: estimated error=$(err) is too large, h=$(h_next)")
 
             num_fail = num_fail+1
             # determine the new step size and order
-            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail)
-            h[end]   = hn
+            (h_next,ordn)=newStepOrder([t, t[end]+h_next],[y yn],wt,ordn,num_fail)
             continue
 
         else
@@ -64,12 +65,10 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
             num_fail=0              # reset the failure counter
             # determine the new step size and order
-            (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail)
+            (h_next,ordn)=newStepOrder([t, t[end]+h_next],[y yn],wt,ordn,num_fail)
             # save the results
-            h   = [h,   hn]
-            t   = [t,   t[end]+hn]
+            t   = [t,   t[end]+h_next]
             y   = [y   yn]
-            nf  = [nf, num_fail]
         end
 
     end
@@ -78,12 +77,13 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
 end
 
-function newStepOrder{T<:Number}(h::AbstractArray{T,1},
-                                 y::AbstractArray{T,2},
-                                 wt::AbstractArray{T,1},
-                                 ord_old::Integer,
-                                 num_fail::Integer)
+function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
+                                 y        :: AbstractArray{T,2},
+                                 wt       :: AbstractArray{T,1},
+                                 ord_old  :: Integer,
+                                 num_fail :: Integer)
 
+    h = diff(t)
     k = ord_old
     hn = h[end]
 
@@ -183,21 +183,20 @@ end
 # y=[y_{n-k},            y_{n-k+1}, ... , y_{n-1},        y_{n}        ] --- length = k+1
 # k is the order of BDF
 # for reference see p. 119
-function stepper!{T<:Number}(t  ::T,
-                             y  ::AbstractArray{T,2},
-                             h  ::AbstractArray{T,1},
-                             F  ::Function,
-                             ag ::AG, # @todo use AG{T}
-                             wt ::AbstractArray{T,1})
+function stepper!{T<:Number}(t      :: AbstractArray{T,1},
+                             y      :: AbstractArray{T,2},
+                             h_next :: T,
+                             F      :: Function,
+                             ag     :: AG, # @todo use AG{T}
+                             wt     :: AbstractArray{T,1})
 
-    k        = length(h)-1      # k from the book is _not_ the order
-                                # of the BDF method
-    ord      = k+1              # this is the true order of BDF method
+    ord      = length(t)        # this is the true order of BDF method
     l        = size(y,1)        # the number of dependent variables
+    h        = [diff(t), h_next]
 
     # sanity check
     # @todo remove it in final version
-    if size(y,2) != length(h)
+    if size(y,2) != length(t)
         error("Incompatible size of h and y")
         return(-1)
     elseif ndims(y) != 2
@@ -214,19 +213,18 @@ function stepper!{T<:Number}(t  ::T,
 
     end
 
-    h_next   = h[end]
-    t_next   = t+h_next
+    t_next   = t[end]+h_next
 
     # we use predictor to obtain the starting point for the modified
     # newton method
-    (y0,dy0,alpha)=predictor(y,h) # ok
+    (y0,dy0,alpha)=predictor(y,h)
 
     # I think there is an error in the book, the sum should be taken
     # from j=1 to k+1 instead of j=1 to k
-    alphas = -sum([1/j for j=1:ord]) # ok
+    alphas = -sum([1/j for j=1:ord])
 
-    a=-alphas/h_next            # ok
-    b=dy0-a*y0                  # ok
+    a=-alphas/h_next
+    b=dy0-a*y0
 
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
@@ -268,11 +266,11 @@ function stepper!{T<:Number}(t  ::T,
                           norm)     # the norm used to estimate error
 
     # alpha0 is needed to estimate error
-    alpha0   =-sum(alpha[1:k])
+    alpha0   =-sum(alpha[1:ord-1])
 
     # @todo I don't know if this error estimate still holds for
     # backwards Euler (when ord==1)
-    M   = max(alpha[k+1],abs(alpha[k+1]+alphas-alpha0))
+    M   = max(alpha[ord],abs(alpha[ord]+alphas-alpha0))
     err = norm(yc-y0)*M
 
     # status<0 means the modified Newton method did not converge
