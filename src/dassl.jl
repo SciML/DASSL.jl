@@ -91,7 +91,11 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
 end
 
-function newStepOrder(h,y,wt,ord_old,num_fail)
+function newStepOrder{T<:Number}(h::AbstractArray{T,1},
+                                 y::AbstractArray{T,2},
+                                 wt::AbstractArray{T,1},
+                                 ord_old::Integer,
+                                 num_fail::Integer)
 
     k = ord_old
     hn = h[end]
@@ -112,13 +116,19 @@ function newStepOrder(h,y,wt,ord_old,num_fail)
 
     # @todo this assumption comes from the BoundsError coming from the
     # code below
-    if length(h) <= k+1
+    if length(h) <= k+2
         return(hn,ord_old)
     end
 
     # psi_i(n+1)
     psi    = cumsum( h[end:-1:end-k-1] )
-    phi    = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+2:end],y[j,end-i+1:end]) for j=1:l, i=1:k+3 ])
+
+    phi = zeros(T,l,k+3)
+    for j=1:l, i = 1:k+3
+        phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
+    end
+
+    # phi    = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+2:end],y[j,end-i+1:end][:]) for j=1:l, i=1:k+3 ])
     sigma  = [ hn^i*factorial(i-1)/prod(psi[1:i]) for i=1:k+2 ]
 
     terkm2 = norm((k-1)*sigma[k-1]*phi[:,k])
@@ -131,7 +141,7 @@ function newStepOrder(h,y,wt,ord_old,num_fail)
     # if k+1 previous steps were of equal size we can estimate the
     # error of the higher order method
     if all( h[end-k-1:end] .== h[end-1] )
-        terkp1=norm(phi[k+3])
+        terkp1=norm(phi[:,k+3])
         seq = [seq, terkp1]
     end
 
@@ -202,6 +212,9 @@ function stepper!{T<:Number}(t  ::T,
     # @todo remove it in final version
     if size(y,2) != length(h)
         error("Incompatible size of h and y")
+        return(-1)
+    elseif ndims(y) != 2
+        error("ndims(y) != 2")
         return(-1)
     end
 
@@ -399,9 +412,6 @@ function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
 
     y0       = sum(phi_star,2)[:,1]
     dy0      = sum([gamma[i]*phi_star[j,i] for j=1:l, i=1:k+1],2)[:,1]
-
-    # println("gamma=$gamma, phi_star=$phi_star, dy0=$dy0, y0=$y0")
-    # println("h=$h, y=$y")
 
     # alpha is neede by the stepper method to estimate error
     return(y0,dy0,alpha)
