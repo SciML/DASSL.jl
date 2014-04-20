@@ -386,8 +386,6 @@ function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
     ord      = k+1              # this is the true order of BDF method
     l        = size(y,1)        # the number of dependent variables
 
-    #### relocate to the predictor?
-
     # these parameters are used by the predictor method
     psi      = cumsum(h[end:-1:1])
     alpha    = h[end]./psi
@@ -399,10 +397,11 @@ function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
 
     gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
 
-    #### END relocate to the predictor
-
     y0       = sum(phi_star,2)[:,1]
-    dy0      = sum([gamma[i]*phi_star[j,i] for j=1:l, i=1:k],2)[:,1]
+    dy0      = sum([gamma[i]*phi_star[j,i] for j=1:l, i=1:k+1],2)[:,1]
+
+    # println("gamma=$gamma, phi_star=$phi_star, dy0=$dy0, y0=$y0")
+    # println("h=$h, y=$y")
 
     # alpha is neede by the stepper method to estimate error
     return(y0,dy0,alpha)
