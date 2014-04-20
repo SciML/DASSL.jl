@@ -21,11 +21,10 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
     a = zero(T)
     ag=AG(a,g)
 
-    ord = [1]
+    ordn = 1                    # initial method order
     t   = [t_start]
     h   = [h0]
     y   = hcat(y0)
-    er  = [0.0]
     nf  = [0]
     num_fail=0
 
@@ -33,7 +32,6 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
 
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
         hn   = h[end]
-        ordn = ord[end]
 
         if hn < 2*hmin
             error("Stepsize too small, aborting")
@@ -58,9 +56,7 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
             num_fail = num_fail+1
             # determine the new step size and order
             (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail)
-            # ordn=min(MAXORDER,length(h))
             h[end]   = hn
-            ord[end] = ordn
             continue
 
         else
@@ -69,25 +65,16 @@ function driver(F,y0,tspan; rtol = 1.0e-3, atol = 1.0e-3, h0 = 1.0e-4)
             num_fail=0              # reset the failure counter
             # determine the new step size and order
             (hn,ordn)=newStepOrder(h,[y yn],wt,ordn,num_fail)
-            # ordn=min(MAXORDER,length(h))
             # save the results
-            ord = [ord, ordn]
             h   = [h,   hn]
             t   = [t,   t[end]+hn]
             y   = [y   yn]
-            er  = [er, err]
             nf  = [nf, num_fail]
         end
 
     end
 
-    s=open("yn.dat", "w+")
-    for i = 1 : size(y,2)
-        @printf(s,"%.15f, %.15f, %.15f, %.15f, %i, %i\n",t[i], y[1,i], er[i], h[i], ord[i], nf[i])
-    end
-    close(s)
-
-    return(ord,h,t,y,er)
+    return(t,y)
 
 end
 
