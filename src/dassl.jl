@@ -7,6 +7,7 @@ const MAXORDER = 6
 type StepperStuff{T<:Number}
     a :: T
     g :: AbstractArray{T,2}
+    evals :: Integer
 end
 
 function driver{T<:Number}(F             :: Function,
@@ -26,21 +27,30 @@ function driver{T<:Number}(F             :: Function,
     # stepper!
     a = zero(T)
     # zip the stepper temporary variables in a type
-    stuff = StepperStuff(a,g)
+    stuff = StepperStuff(a,g,0)
 
     ord      = 1                    # initial method order
     t        = [t_start]            # initial time
     h        = h0                   # current step size
     y        = hcat(y0)             # initial data
     num_fail = 0                    # number of consecutive failures
+    num_accepted = 0
+    num_rejected = 0
+
+    ordn = [ord]
 
     while t[end] < t_stop
+
+
+        if( num_accepted + num_rejected >  1000 )
+            break
+        end
 
         epsilon = eps(one(T))
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
         if h < hmin
-            warn("Stepsize too small (h=$h).")
+            warn("Stepsize too small (h=$h at t=$(t[end]), terminating")
             break
         end
 
@@ -58,19 +68,21 @@ function driver{T<:Number}(F             :: Function,
 
             # increase the failure counter
             num_fail = num_fail+1
+            num_rejected += 1
             # reduce the step by 25%
             h = 3/4*h
             continue
 
         elseif err > 1.0
-            err > 1.0
             # local error is too large.  Step is rejected, and we try
             # again with new step size and order.
 
             # increase the failure counter
             num_fail = num_fail+1
+            num_rejected += 1
             # determine the new step size and order
-            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
+            # (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
+            ord=min(length(t),MAXORDER)
             continue
 
         else
@@ -78,16 +90,19 @@ function driver{T<:Number}(F             :: Function,
 
             # reset the failure counter
             num_fail=0
+            num_accepted += 1
             # determine the new step size and order
-            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
+            # (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
+            ord=min(length(t),MAXORDER)
             # save the results
             t   = [t,  t[end]+h]
             y   = [y   yn]
+            ordn = [ordn, ord]
         end
 
     end
 
-    return(t,y)
+    return(t,y,ordn,stuff.evals,num_accepted,num_rejected)
 
 end
 
@@ -113,13 +128,12 @@ function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
 
     l = size(y,1)
 
-    # @todo this assumption comes from the BoundsError coming from the
-    # code below
+    # return if we didn't make enough steps to determine the new
+    # order/step size
     if length(h) <= k+2
         return(hn,ord_old)
     end
 
-    # psi_i(n+1)
     psi    = cumsum( h[end:-1:end-k-1] )
 
     phi = zeros(T,l,k+3)
@@ -127,7 +141,6 @@ function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
         phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
     end
 
-    # phi    = float([ reduce(*,psi[1:i-1])*div_diff(h[end-i+2:end],y[j,end-i+1:end][:]) for j=1:l, i=1:k+3 ])
     sigma  = [ hn^i*factorial(i-1)/prod(psi[1:i]) for i=1:k+2 ]
 
     terkm2 = norm((k-1)*sigma[k-1]*phi[:,k])
@@ -308,6 +321,7 @@ function corrector{T<:Number}(stuff::StepperStuff{T},
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
         stuff.g=g_new()
+        stuff.evals += 1
         stuff.a=a_new
         # run the corrector
         (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, norm)
@@ -322,6 +336,7 @@ function corrector{T<:Number}(stuff::StepperStuff{T},
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
             stuff.g=g_new()
+            stuff.evals += 1
             stuff.a=a_new
             # run the corrector again
             (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, norm )

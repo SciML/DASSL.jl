@@ -7,3 +7,5 @@
 # verified
 
 - predictor
+
+- modified_newton
