@@ -1,5 +1,7 @@
 module dassl
 
+using InterPol
+
 export driver
 
 const MAXORDER = 6
@@ -81,8 +83,9 @@ function driver{T<:Number}(F             :: Function,
             num_fail = num_fail+1
             num_rejected += 1
             # determine the new step size and order
-            # (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
-            ord=min(length(t),MAXORDER)
+            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
+            error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
+            # ord=min(length(t),MAXORDER)
             continue
 
         else
@@ -92,8 +95,8 @@ function driver{T<:Number}(F             :: Function,
             num_fail=0
             num_accepted += 1
             # determine the new step size and order
-            # (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
-            ord=min(length(t),MAXORDER)
+            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
+            # ord=min(length(t),MAXORDER)
             # save the results
             t   = [t,  t[end]+h]
             y   = [y   yn]
@@ -112,31 +115,37 @@ function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
                                  ord_old  :: Integer,
                                  num_fail :: Integer)
 
+    if length(t) != size(y,2)
+        error("incompatible size of y and t")
+    end
+
     h = diff(t)
     k = ord_old
     hn = h[end]
 
-    # we cannot increse order if there is not enough previous steps
-    if length(h) <= k
-        return(hn,k)
-    end
-
-    # if the order is lower than three, we cannot estimate the  increase it
+    # if the order is lower than three, we cannot give the error
+    # estimates we need, so we increase the order
     if ord_old < 3
-        return(hn,ord_old+1)
+        return hn, ord_old+1
     end
 
-    l = size(y,1)
+    error("bu")
+
+    # we cannot increse order if there is not enough previous steps
+    if length(h) < 3
+        return hn, k
+    end
 
     # return if we didn't make enough steps to determine the new
     # order/step size
     if length(h) <= k+2
-        return(hn,ord_old)
+        return hn, ord_old
     end
 
-    psi    = cumsum( h[end:-1:end-k-1] )
+    psi = cumsum(h[end:-1:end-k-1])
+    l   = size(y,1)
+    phi = Array(T,l,k+3)
 
-    phi = zeros(T,l,k+3)
     for j=1:l, i = 1:k+3
         phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
     end
@@ -241,7 +250,8 @@ function stepper!{T<:Number}(t      :: AbstractArray{T,1},
 
     # we use predictor to obtain the starting point for the modified
     # newton method
-    (y0,dy0,alpha)=predictor(y,h)
+    y0  = interpolateAt(t,y,t_next)
+    dy0 = interpolateDerivativeAt(t,y,t_next)
 
     # I think there is an error in the book, the sum should be taken
     # from j=1 to k+1 instead of j=1 to k
@@ -253,10 +263,7 @@ function stepper!{T<:Number}(t      :: AbstractArray{T,1},
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
     # causing trouble when dy0==0 (which happens for ord==1)
-    delta = sqrt(eps(T))*float([ max(abs(y0[j]),
-                                     abs(h_next*dy0[j]),
-                                     wt[j])
-                                for j=1:l])
+    delta = jac_delta(y0,dy0,h_next,wt)
 
     # This is a sanity check, if delta is zero we can't continue, this
     # shouldn't happen though, so this test should be removed in the
@@ -288,6 +295,8 @@ function stepper!{T<:Number}(t      :: AbstractArray{T,1},
                           y0,       # starting point for modified newton
                           f_newton, # we want to find zeroes of this function
                           norm)     # the norm used to estimate error
+
+    alpha    = h_next./cumsum(h[end:-1:1])
 
     # alpha0 is needed to estimate error
     alpha0   =-sum(alpha[1:ord-1])
@@ -455,6 +464,12 @@ function G{T<:Number}(f::Function,y0::AbstractArray{T,1},delta::AbstractArray{T,
         s[:,i]=(f(y0+edelta[:,i])-f(y0))/delta[i]
     end
     return(s)
+end
+
+function jac_delta{T<:Number}(y0::Vector{T},dy0::Vector{T},h_next::T,wt::Vector{T})
+    d = [ max(abs(y0[j]),abs(h_next*dy0[j]),wt[j]) for j=1:length(y0)]
+    d*= sqrt(eps(T))
+    return d
 end
 
 end
