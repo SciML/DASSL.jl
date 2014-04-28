@@ -7,14 +7,14 @@ export driver
 const MAXORDER = 6
 
 type StepperStuff{T<:Number}
-    a :: T
-    g :: AbstractArray{T,2}
+    a     :: T
+    g     :: Matrix{T}
     evals :: Integer
 end
 
 function driver{T<:Number}(F             :: Function,
-                           y0            :: AbstractArray{T,1},
-                           tspan         :: AbstractArray{T,1};
+                           y0            :: Vector{T},
+                           tspan         :: Vector{T};
                            rtol = 1.0e-3 :: T,
                            atol = 1.0e-3 :: T,
                            h0   = 1.0e-4 :: T)
@@ -44,7 +44,7 @@ function driver{T<:Number}(F             :: Function,
     while t[end] < t_stop
 
 
-        if( num_accepted + num_rejected >  1000 )
+        if  num_accepted + num_rejected >  100
             break
         end
 
@@ -69,10 +69,11 @@ function driver{T<:Number}(F             :: Function,
             # the step size and try again
 
             # increase the failure counter
-            num_fail = num_fail+1
+            num_fail     += 1
+            # keep track of the total number of rejected steps
             num_rejected += 1
             # reduce the step by 25%
-            h = 3/4*h
+            h *= 1/4
             continue
 
         elseif err > 1.0
@@ -80,27 +81,28 @@ function driver{T<:Number}(F             :: Function,
             # again with new step size and order.
 
             # increase the failure counter
-            num_fail = num_fail+1
+            num_fail     += 1
+            # keep track of the total number of rejected steps
             num_rejected += 1
-            # determine the new step size and order
-            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
-            error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
-            # ord=min(length(t),MAXORDER)
+            # determine the new step size and order, excludint the current step
+            (r,ord) = newStepOrder(t,y,dassl_norm,ord,num_fail)
+            h *= r
+            # error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
             continue
 
         else
             # step is accepted
 
             # reset the failure counter
-            num_fail=0
+            num_fail      = 0
             num_accepted += 1
-            # determine the new step size and order
-            (h,ord)=newStepOrder([t, t[end]+h],[y yn],dassl_norm,ord,num_fail)
-            # ord=min(length(t),MAXORDER)
             # save the results
-            t   = [t,  t[end]+h]
-            y   = [y   yn]
+            t    = [t,  t[end]+h]
+            y    = [y   yn]
             ordn = [ordn, ord]
+            # determine the new step size and order, including the current step
+            (r,ord) = newStepOrder(t,y,dassl_norm,ord,num_fail)
+            h *= r
         end
 
     end
@@ -109,106 +111,206 @@ function driver{T<:Number}(F             :: Function,
 
 end
 
-function newStepOrder{T<:Number}(t        :: AbstractArray{T,1},
-                                 y        :: AbstractArray{T,2},
-                                 norm     :: Function,
-                                 ord_old  :: Integer,
-                                 num_fail :: Integer)
+
+function newStepOrder{T<:Number}(t         :: Vector{T},
+                                 y         :: Matrix{T},
+                                 norm      :: Function,
+                                 k         :: Integer,
+                                 num_fail  :: Integer)
 
     if length(t) != size(y,2)
         error("incompatible size of y and t")
     end
 
+    available_steps = length(t)
+
+    println("k=$k, num_fail=$num_fail, as=$available_steps")
+
+    if num_fail >= 3
+        # probably, the step size was drastically decreased for
+        # several steps in a row, so we reduce the order to one and
+        # further decrease the step size
+        (r,order) = (1/4,1)
+
+    elseif available_steps < k+3
+        # we are at the beginning of the integration, we don't have
+        # enough steps to run newStepOrderContinuous, we have to rely
+        # on a crude order/stepsize selection
+        if num_fail == 0
+            # previous step was accepted so we can increase the order
+            # and the step size
+            (r,order) = (2,min(k+1,MAXORDER))
+        else
+            # @todo fix this step, I am not sure about the choice of order
+            #
+            # previous step was rejected, we have to decrease the step
+            # size and order
+            (r,order) = (1/4,max(k-1,1))
+        end
+
+    else
+        # we have at least k+3 previous steps available, so we can
+        # safely estimate the order k-2, k-1, k and possibly k+1
+        (r,order) = newStepOrderContinuous(t,y,norm,k)
+        # this function prevents from step size changing too rapidly
+        r = normalizeStepSize(r,num_fail)
+
+    end
+
+    println("order=$order, r=$r")
+
+    return r, order
+
+end
+
+
+function newStepOrderContinuous{T<:Number}(t    :: Vector{T},
+                                           y    :: Matrix{T},
+                                           norm :: Function,
+                                           k    :: Integer)
+
+    # compute the error estimates of methods of order k-2, k-1, k and
+    # (if possible) k+1
+    errors = errorEstimates(t,y,norm,k)
+
+    # we determine the next order using monotonicity of computed error
+    # estimates.  The diffs contains the differences between the
+    # orders k-2,k-1,k,k+1 (if they were possible to compute).
+    derrors = diff(errors[errors .!= zero(T)])
+
+    if all(derrors .> 0)
+        # if the errorsuence is increasing we decrease the order
+        order = max(1,k-1)
+
+    elseif k == MAXORDER
+        # we already maximized the order
+        order = k
+
+    # elseif order_rised
+    #     # don't rise the order two times in a row
+    #     order = k
+
+    elseif errors[k+1] == zero(T)
+        # this means that the k+1 order estimate was not computed (due
+        # to unequal previous steps) so we cannot safely rise the
+        # order
+        order = k
+
+    elseif all(derrors .< zero(T))
+        # if we can use the estimate of the k+1 order method we check
+        # if the sequence of error estimates is decreasing.  If it is,
+        # then we increase the order.
+        order = k+1
+
+    else
+        # otherwise keep the previous order
+        order = k
+
+    end
+
+    # normalize the estimated error
+    est = errors[order]/(order+1)
+
+    # initial guess for the new step size multiplier
+    r = (2*est+1/10000)^(-1/(order+1))
+
+    return r, order
+
+end
+
+
+# Based on whether the previous steps were successful we determine
+# the new step size
+#
+# num_fail is the number of steps that failed before this step, r is a
+# suggested step size multiplier.
+function normalizeStepSize{T<:Number}(r :: T, num_fail :: Integer)
+
+    if num_fail == 0
+        # previous step was accepted
+        if r >= 2
+            r = 2
+        elseif r <= 1
+            # choose r from between 0.5 and 0.9
+            r = max(1/2,min(r,9/10))
+        end
+
+    elseif num_fail == 1
+        # previous step failed, we slightly decrease the step size,
+        # the resulting r is between 0.25 and 0.9
+        r = max(1/4,9/10*min(r,1))
+
+    elseif num_fail == 2
+        # previous step failed for a second time, error estimates are
+        # probably not reliable so decrease the step size
+        r = 1/4
+
+    elseif num_fail >= 3
+        # @todo remove this case
+        #
+        # this should never be the case, it should be covered by the
+        # newStepOrder function
+        error("num_fail >= 3 inside normalizeStepSize")
+
+    end
+
+    return r
+
+end
+
+
+# this function estimates the errors of methods of order
+# order-2,-1,0,+1 and returns the estimates as an array seq
+# the estimates require
+function errorEstimates{T<:Number}(t    :: Vector{T},
+                                   y    :: Matrix{T},
+                                   norm :: Function,
+                                   k    :: Integer)
+
     h = diff(t)
-    k = ord_old
-    hn = h[end]
 
-    # if the order is lower than three, we cannot give the error
-    # estimates we need, so we increase the order
-    if ord_old < 3
-        return hn, ord_old+1
-    end
+    l = size(y,1)
 
-    error("bu")
+    psi    = cumsum(reverse(h[end-k-1:end]))
 
-    # we cannot increse order if there is not enough previous steps
-    if length(h) < 3
-        return hn, k
-    end
-
-    # return if we didn't make enough steps to determine the new
-    # order/step size
-    if length(h) <= k+2
-        return hn, ord_old
-    end
-
-    psi = cumsum(h[end:-1:end-k-1])
-    l   = size(y,1)
-    phi = Array(T,l,k+3)
-
-    for j=1:l, i = 1:k+3
+    phi    = zeros(T,l,k+3)
+    # fill in all but a last (k+3)-rd row of phi
+    for j=1:l, i = 1:k+2
         phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
     end
 
-    sigma  = [ hn^i*factorial(i-1)/prod(psi[1:i]) for i=1:k+2 ]
-
-    terkm2 = norm((k-1)*sigma[k-1]*phi[:,k])
-    terkm1 = norm(k*sigma[k]*phi[:,k+1])
-    terk   = norm((k+1)*sigma[k+1]*phi[:,k+2])
-
-    # determine the new method order
-    seq = [terkm2,terkm1,terk]
-
-    # if k+1 previous steps were of equal size we can estimate the
-    # error of the higher order method
-    if all( h[end-k-1:end] .== h[end-1] )
-        terkp1=norm(phi[:,k+3])
-        seq = [seq, terkp1]
+    sigma  = zeros(T,k+2)
+    sigma[1] = 1
+    for i = 2:k+2
+        sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
     end
 
-    difs = diff(seq)
+    errors = zeros(T,6)
+    errors[k] = norm((k+1)*sigma[k+1]*phi[:,k+2])
 
-    # sequence is decreasing => increase order
-    if all(difs .< 0)
-        ordn = min(ord_old+1,MAXORDER)
-        # increasing => decrease order
-    elseif all(difs .> 0)
-        ordn = ord_old-1
-    else
-        # otherwise => don't change order
-        ordn = ord_old
+    if k >= 2
+        # error estimate for order k-1
+        errors[k-1] = norm((k+0)*sigma[k+0]*phi[:,k+1])
     end
 
-    # Estimate of the error for the new order.  Order increment can be
-    # positive or negative, we choose one of the error estimates
-    # [terkm2,terkm1,terk,terkp1 (if available)] and base the new step
-    # size on that estimate
-    ord_incr=(ordn-ord_old)
-    est=seq[min(3+ord_incr,end)]/(ordn+1)
+    if k >= 3
+        # error estimate for order k-2
+        errors[k-2] = norm((k-1)*sigma[k-1]*phi[:,k+0])
+    end
 
-    # determine the new step size based on the estimate est for the
-    # new order
-    r=(2.0*est)^(-1/(ordn+1))
-
-    # based on whether the previous steps were successful we determine
-    # the new step size
-    #
-    # num_fail is the number of steps that failed before this step
-    if num_fail == 0
-        if r >= 2.0
-            hn = 2*hn
-        elseif r < 1.0
-            r = max(0.5,min(r,0.9))
-            hn = r*hn
+    if k <= 5 && all( h[end-k+1:end] .== h[end] )
+        # error estimate for order k+1
+        # fill in the rest of the phi array (the (k+3)-rd row)
+        for j=1:l, i = k+3:k+3
+            phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
         end
-    elseif num_fail == 1
-        r=r*0.9
-        hn = max(0.25,min(r,0.9))
-    elseif num_fail >= 2
-        hn = 3/4*hn
+
+        # estimate for the order k+1
+        errors[k+1] = norm(phi[:,k+3])
     end
 
-    return(hn,ordn)
+    return errors
+
 end
 
 
@@ -216,12 +318,12 @@ end
 # y=[y_{n-k},            y_{n-k+1}, ... , y_{n-1},        y_{n}        ] --- length = k+1
 # k is the order of BDF
 # for reference see p. 119
-function stepper!{T<:Number}(t      :: AbstractArray{T,1},
-                             y      :: AbstractArray{T,2},
+function stepper!{T<:Number}(t      :: Vector{T},
+                             y      :: Matrix{T},
                              h_next :: T,
                              F      :: Function,
                              stuff  :: StepperStuff{T},
-                             wt     :: AbstractArray{T,1})
+                             wt     :: Vector{T})
 
     ord      = length(t)        # this is the true order of BDF method
     l        = size(y,1)        # the number of dependent variables
@@ -317,12 +419,12 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T<:Number}(stuff::StepperStuff{T},
-                              a_new::T,
-                              g_new::Function,
-                              y0::AbstractArray{T,1},
-                              f_newton::Function,
-                              norm::Function)
+function corrector{T<:Number}(stuff    :: StepperStuff{T},
+                              a_new    :: T,
+                              g_new    :: Function,
+                              y0       :: Vector{T},
+                              f_newton :: Function,
+                              norm     :: Function)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -356,11 +458,14 @@ function corrector{T<:Number}(stuff::StepperStuff{T},
 
 end
 
+
 # this function iterates f until it finds its fixed point, starting
 # from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Function)
+function newton_iteration{T<:Number}(f    :: Function,
+                                     y0   :: Vector{T},
+                                     norm :: Function)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -410,8 +515,9 @@ function newton_iteration{T<:Number}(f::Function,y0::AbstractArray{T,1},norm::Fu
     return(status,y0)
 end
 
-
-function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
+# @todo delete this function
+function predictor{T<:Number}(y :: Matrix{T},
+                              h :: Vector{T})
     k        = length(h)-1      # k from the book is _not_ the order
                                 # of the BDF method
     ord      = k+1              # this is the true order of BDF method
@@ -435,9 +541,11 @@ function predictor{T<:Number}(y::AbstractArray{T,2},h::AbstractArray{T,1})
     return(y0,dy0,alpha)
 end
 
+
 # h=[h_{n-k}, ... , h_{n-1}]
 # y=[y_{n-k}, ... , y_{n-1}, y_{n}]
-function div_diff{T<:Number}(h::AbstractArray{T,1},y::AbstractArray{T,1})
+function div_diff{T<:Number}(h :: Vector{T},
+                             y :: Vector{T})
     if length(y) < 1
         error("length(y) is $(length(y)) in div_diff, should be >=1")
         return 0::T
@@ -450,13 +558,17 @@ function div_diff{T<:Number}(h::AbstractArray{T,1},y::AbstractArray{T,1})
     end
 end
 
-function dassl_norm{T<:Number}(v::AbstractArray{T,1},wt::AbstractArray{T,1})
+
+function dassl_norm{T<:Number}(v  :: Vector{T},
+                               wt :: Vector{T})
     norm(v./wt)/sqrt(length(v))
 end
 
 # compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
 # @todo replace with symmetric finite difference?
-function G{T<:Number}(f::Function,y0::AbstractArray{T,1},delta::AbstractArray{T,1})
+function G{T<:Number}(f     :: Function,
+                      y0    :: Vector{T},
+                      delta :: Vector{T})
     n=length(y0)
     edelta=diagm(delta)
     s=Array(eltype(delta),n,n)
@@ -466,7 +578,10 @@ function G{T<:Number}(f::Function,y0::AbstractArray{T,1},delta::AbstractArray{T,
     return(s)
 end
 
-function jac_delta{T<:Number}(y0::Vector{T},dy0::Vector{T},h_next::T,wt::Vector{T})
+function jac_delta{T<:Number}(y0     :: Vector{T}
+                              ,dy0   :: Vector{T},
+                              h_next :: T,
+                              wt     :: Vector{T})
     d = [ max(abs(y0[j]),abs(h_next*dy0[j]),wt[j]) for j=1:length(y0)]
     d*= sqrt(eps(T))
     return d
