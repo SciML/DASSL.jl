@@ -49,9 +49,9 @@ function driver{T<:Number}(F             :: Function,
     while t[end] < t_stop
 
 
-        if  num_accepted + num_rejected >  10000
-            break
-        end
+        # if  num_accepted + num_rejected >  10000
+        #     break
+        # end
 
         epsilon = eps(one(T))
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
@@ -96,7 +96,9 @@ function driver{T<:Number}(F             :: Function,
             continue
 
         else
-            # step is accepted
+            ####################
+            # step is accepted #
+            ####################
 
             # reset the failure counter
             num_fail      = 0
@@ -140,7 +142,7 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
 
     available_steps = length(t)
 
-    println("k=$k, num_fail=$num_fail, as=$available_steps")
+    # println("k=$k, num_fail=$num_fail, as=$available_steps")
 
     if num_fail >= 3
         # probably, the step size was drastically decreased for
@@ -173,7 +175,7 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
 
     end
 
-    println("order=$order, r=$r")
+    # println("order=$order, r=$r")
 
     return r, order
 
@@ -421,14 +423,15 @@ function stepper!{T<:Number}(t      :: Vector{T},
                           f_newton, # we want to find zeroes of this function
                           norm)     # the norm used to estimate error
 
-    alpha    = h_next./cumsum(h[end:-1:1])
+    # alpha    = h_next./cumsum(h[end:-1:1])
 
     # alpha0 is needed to estimate error
-    alpha0   =-sum(alpha[1:ord-1])
+    # alpha0   = -sum(alpha)
 
     # @todo I don't know if this error estimate still holds for
     # backwards Euler (when ord==1)
-    M   = max(alpha[ord],abs(alpha[ord]+alphas-alpha0))
+    # M   = max(alpha[ord],abs(alpha[ord]+alphas-alpha0))
+    M   = 1/(ord+1)
     err = norm(yc-y0)*M
 
     # status<0 means the modified Newton method did not converge
