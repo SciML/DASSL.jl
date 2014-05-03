@@ -1,3 +1,5 @@
+# @todo better estimate on error of order k (error[k])
+
 module dassl
 
 using InterPol
@@ -38,13 +40,16 @@ function driver{T<:Number}(F             :: Function,
     num_fail = 0                    # number of consecutive failures
     num_accepted = 0
     num_rejected = 0
+    nfixed = 0
 
     ordn = [ord]
+    r = 1
+    ord = 1
 
     while t[end] < t_stop
 
 
-        if  num_accepted + num_rejected >  100
+        if  num_accepted + num_rejected >  10000
             break
         end
 
@@ -85,7 +90,7 @@ function driver{T<:Number}(F             :: Function,
             # keep track of the total number of rejected steps
             num_rejected += 1
             # determine the new step size and order, excludint the current step
-            (r,ord) = newStepOrder(t,y,dassl_norm,ord,num_fail)
+            (r,ord) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed)
             h *= r
             # error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
             continue
@@ -96,12 +101,22 @@ function driver{T<:Number}(F             :: Function,
             # reset the failure counter
             num_fail      = 0
             num_accepted += 1
+
             # save the results
             t    = [t,  t[end]+h]
             y    = [y   yn]
             ordn = [ordn, ord]
             # determine the new step size and order, including the current step
-            (r,ord) = newStepOrder(t,y,dassl_norm,ord,num_fail)
+            (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed)
+
+            if ord_new == ord || r_new == r
+                nfixed += 1
+            else
+                nfixed = 1
+            end
+
+            (r,ord) = (r_new,ord_new)
+
             h *= r
         end
 
@@ -116,9 +131,10 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
                                  y         :: Matrix{T},
                                  norm      :: Function,
                                  k         :: Integer,
-                                 num_fail  :: Integer)
+                                 num_fail  :: Integer,
+                                 nfixed    :: Integer)
 
-    if length(t) != size(y,2)
+    if length(t) != size(y,2)+1
         error("incompatible size of y and t")
     end
 
@@ -151,7 +167,7 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,norm,k)
+        (r,order) = newStepOrderContinuous(t,y,norm,k,nfixed)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
 
@@ -164,52 +180,51 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
 end
 
 
-function newStepOrderContinuous{T<:Number}(t    :: Vector{T},
-                                           y    :: Matrix{T},
-                                           norm :: Function,
-                                           k    :: Integer)
+function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
+                                           y      :: Matrix{T},
+                                           norm   :: Function,
+                                           k      :: Integer,
+                                           nfixed :: Integer)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
-    errors = errorEstimates(t,y,norm,k)
+    errors  = errorEstimates(t,y,norm,k,nfixed)
+    # normalized errors, this is TERK from DASSL
+    nerrors = errors .* [2:7]
 
-    # we determine the next order using monotonicity of computed error
-    # estimates.  The diffs contains the differences between the
-    # orders k-2,k-1,k,k+1 (if they were possible to compute).
-    derrors = diff(errors[errors .!= zero(T)])
+    if k == 1
+        if nerrors[k+1] >= nerrors[k]/2
+            order = k
+        else
+            order = k+1
+        end
 
-    if all(derrors .> 0)
-        # if the errorsuence is increasing we decrease the order
-        order = max(1,k-1)
-
-    elseif k == MAXORDER
-        # we already maximized the order
-        order = k
-
-    # elseif order_rised
-    #     # don't rise the order two times in a row
-    #     order = k
-
-    elseif errors[k+1] == zero(T)
-        # this means that the k+1 order estimate was not computed (due
-        # to unequal previous steps) so we cannot safely rise the
-        # order
-        order = k
-
-    elseif all(derrors .< zero(T))
-        # if we can use the estimate of the k+1 order method we check
-        # if the sequence of error estimates is decreasing.  If it is,
-        # then we increase the order.
-        order = k+1
-
-    else
-        # otherwise keep the previous order
-        order = k
-
+    elseif k >= 2
+        if k == 2 && nerrors[k-1] < nerrors[k]/2
+            order = k-1
+        elseif k >= 3 && max(nerrors[k-1],nerrors[k-2]) > nerrors[k]
+            order = k-1
+        elseif k == MAXORDER
+            order = k
+        elseif false
+            # @todo don't increase order two times in a row
+            order = k
+        elseif nfixed >= k
+            # if the estimate for order k+1 is available
+            if nerrors[k-1] <= min(nerrors[k],nerrors[k+1])
+                order = k-1
+            elseif nerrors[k+1] >= nerrors[k]
+                order = k
+            else
+                order = k+1
+            end
+        else
+            order = k
+        end
     end
 
-    # normalize the estimated error
-    est = errors[order]/(order+1)
+    # error estimate for the next step
+    est = errors[order]
 
     # initial guess for the new step size multiplier
     r = (2*est+1/10000)^(-1/(order+1))
@@ -224,7 +239,8 @@ end
 #
 # num_fail is the number of steps that failed before this step, r is a
 # suggested step size multiplier.
-function normalizeStepSize{T<:Number}(r :: T, num_fail :: Integer)
+function normalizeStepSize{T<:Number}(r        :: T,
+                                      num_fail :: Integer)
 
     if num_fail == 0
         # previous step was accepted
@@ -259,13 +275,17 @@ function normalizeStepSize{T<:Number}(r :: T, num_fail :: Integer)
 end
 
 
-# this function estimates the errors of methods of order
-# order-2,-1,0,+1 and returns the estimates as an array seq
-# the estimates require
-function errorEstimates{T<:Number}(t    :: Vector{T},
-                                   y    :: Matrix{T},
-                                   norm :: Function,
-                                   k    :: Integer)
+
+# this function estimates the errors of methods of order k-2,k-1,k,k+1
+# and returns the estimates as an array seq the estimates require
+
+# here t is an array of times [t_0, t_1, ..., t_n, t_{n+1}]
+# and y is an array of solutions [y_0, y_1, ..., y_n]
+function errorEstimates{T<:Number}(t      :: Vector{T},
+                                   y      :: Matrix{T},
+                                   norm   :: Function,
+                                   k      :: Integer,
+                                   nfixed :: Integer)
 
     h = diff(t)
 
@@ -273,6 +293,8 @@ function errorEstimates{T<:Number}(t    :: Vector{T},
 
     psi    = cumsum(reverse(h[end-k-1:end]))
 
+    # @todo there is no need to allocate array of size 1:k+3, we only
+    # need a four element array k:k+3
     phi    = zeros(T,l,k+3)
     # fill in all but a last (k+3)-rd row of phi
     for j=1:l, i = 1:k+2
@@ -285,20 +307,20 @@ function errorEstimates{T<:Number}(t    :: Vector{T},
         sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
     end
 
-    errors = zeros(T,6)
-    errors[k] = norm((k+1)*sigma[k+1]*phi[:,k+2])
+    errors    = zeros(T,MAXORDER)
+    errors[k] = (k+1)*sigma[k+1]*norm(phi[:,k+2])
 
     if k >= 2
         # error estimate for order k-1
-        errors[k-1] = norm((k+0)*sigma[k+0]*phi[:,k+1])
+        errors[k-1] = k*sigma[k]*norm(phi[:,k+1])
     end
 
     if k >= 3
         # error estimate for order k-2
-        errors[k-2] = norm((k-1)*sigma[k-1]*phi[:,k+0])
+        errors[k-2] = (k-1)*sigma[k-1]*norm(phi[:,k])
     end
 
-    if k <= 5 && all( h[end-k+1:end] .== h[end] )
+    if k <= 5 && nfixed >= k+1
         # error estimate for order k+1
         # fill in the rest of the phi array (the (k+3)-rd row)
         for j=1:l, i = k+3:k+3
@@ -306,9 +328,10 @@ function errorEstimates{T<:Number}(t    :: Vector{T},
         end
 
         # estimate for the order k+1
-        errors[k+1] = norm(phi[:,k+3])
+        errors[k+1] = (k+2)*sigma[k+2]*norm(phi[:,k+3])
     end
 
+    # return error estimates (this is ERK{M2,M1,,P1} from DASSL)
     return errors
 
 end
