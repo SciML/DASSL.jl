@@ -234,7 +234,6 @@ function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
 
     # error estimate for the next step
     est = errors[order]
-    # @todo errors[k] is usually much larger than error estimate from the stepper
 
     # initial guess for the new step size multiplier
     r = (2*est+1/10000)^(-1/(order+1))
@@ -368,7 +367,7 @@ function stepper!{T<:Number}(ord    :: Integer,
     # sanity check
     # @todo remove it in final version
     if length(t) < ord || size(y,2) < ord
-        error("Not enough point in a grid to use method of order $ord")
+        error("Not enough points in a grid to use method of order $ord")
     end
 
     # @todo this should be the view of the tail of the arrays t and y
