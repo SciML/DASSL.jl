@@ -1,4 +1,5 @@
 # @todo better estimate on error of order k (error[k])
+# @todo changing MAXORDER to 3 results in BoundsError()
 
 module dassl
 
@@ -43,6 +44,7 @@ function driver{T<:Number}(F             :: Function,
     nfixed = 0
 
     ordn = [ord]
+    evalsn = [0]
     r = 1
     ord = 1
 
@@ -69,6 +71,8 @@ function driver{T<:Number}(F             :: Function,
 
         (status,err,yn)=stepper!(ord,t,y,h,F,stuff,wt)
 
+        evalsn=[evalsn, stuff.evals]
+
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
             # the step size and try again
@@ -89,8 +93,8 @@ function driver{T<:Number}(F             :: Function,
             num_fail     += 1
             # keep track of the total number of rejected steps
             num_rejected += 1
-            # determine the new step size and order, excludint the current step
-            (r,ord) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed)
+            # determine the new step size and order, excluding the current step
+            (r,ord) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed,err)
             h *= r
             # error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
             continue
@@ -109,11 +113,13 @@ function driver{T<:Number}(F             :: Function,
             y    = [y   yn]
             ordn = [ordn, ord]
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed)
+            (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed,err)
 
-            if ord_new == ord || r_new == r
+            if ord_new == ord && r_new == r
                 nfixed += 1
             else
+                # @todo am I counting the number of fixed
+                # order/stepsize steps correctly?
                 nfixed = 1
             end
 
@@ -124,7 +130,7 @@ function driver{T<:Number}(F             :: Function,
 
     end
 
-    return(t,y,ordn,stuff.evals,num_accepted,num_rejected)
+    return(t,y,ordn,evalsn,num_accepted,num_rejected)
 
 end
 
@@ -134,7 +140,8 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
                                  norm      :: Function,
                                  k         :: Integer,
                                  num_fail  :: Integer,
-                                 nfixed    :: Integer)
+                                 nfixed    :: Integer,
+                                 erk       :: T)
 
     if length(t) != size(y,2)+1
         error("incompatible size of y and t")
@@ -167,9 +174,13 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,norm,k,nfixed)
+        (r,order) = newStepOrderContinuous(t,y,norm,k,nfixed,erk)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
+        # if the previous step failed don't increase the order
+        if num_fail > 0
+            order = min(order,k)
+        end
 
     end
 
@@ -182,25 +193,27 @@ function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
                                            y      :: Matrix{T},
                                            norm   :: Function,
                                            k      :: Integer,
-                                           nfixed :: Integer)
+                                           nfixed :: Integer,
+                                           erk    :: T)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
     errors  = errorEstimates(t,y,norm,k,nfixed)
+    errors[k] = erk
     # normalized errors, this is TERK from DASSL
-    nerrors = errors .* [2:7]
+    nerrors = errors .* [2:MAXORDER+1]
+
+    order = k
 
     if k == 1
-        if nerrors[k+1] >= nerrors[k]/2
-            order = k
-        else
+        if nerrors[k]/2 > nerrors[k+1]
             order = k+1
         end
 
     elseif k >= 2
         if k == 2 && nerrors[k-1] < nerrors[k]/2
             order = k-1
-        elseif k >= 3 && max(nerrors[k-1],nerrors[k-2]) > nerrors[k]
+        elseif k >= 3 && max(nerrors[k-1],nerrors[k-2]) <= nerrors[k]
             order = k-1
         elseif k == MAXORDER
             order = k
@@ -211,13 +224,11 @@ function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
             # if the estimate for order k+1 is available
             if nerrors[k-1] <= min(nerrors[k],nerrors[k+1])
                 order = k-1
-            elseif nerrors[k+1] >= nerrors[k]
+            elseif nerrors[k] <= nerrors[k+1]
                 order = k
             else
                 order = k+1
             end
-        else
-            order = k
         end
     end
 
@@ -245,9 +256,11 @@ function normalizeStepSize{T<:Number}(r        :: T,
         # previous step was accepted
         if r >= 2
             r = 2
-        elseif r <= 1
+        elseif r < 1
             # choose r from between 0.5 and 0.9
             r = max(1/2,min(r,9/10))
+        else
+            r = 1
         end
 
     elseif num_fail == 1
@@ -307,16 +320,16 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
     end
 
     errors    = zeros(T,MAXORDER)
-    errors[k] = (k+1)*sigma[k+1]*norm(phi[:,k+2])
+    errors[k] = sigma[k+1]*norm(phi[:,k+2])
 
     if k >= 2
         # error estimate for order k-1
-        errors[k-1] = k*sigma[k]*norm(phi[:,k+1])
+        errors[k-1] = sigma[k]*norm(phi[:,k+1])
     end
 
     if k >= 3
         # error estimate for order k-2
-        errors[k-2] = (k-1)*sigma[k-1]*norm(phi[:,k])
+        errors[k-2] = sigma[k-1]*norm(phi[:,k])
     end
 
     if k <= 5 && nfixed >= k+1
@@ -327,7 +340,7 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
         end
 
         # estimate for the order k+1
-        errors[k+1] = (k+2)*sigma[k+2]*norm(phi[:,k+3])
+        errors[k+1] = norm(phi[:,k+3])
     end
 
     # return error estimates (this is ERK{M2,M1,,P1} from DASSL)
@@ -364,8 +377,8 @@ function stepper!{T<:Number}(ord    :: Integer,
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
-    if ord < 1 || ord > 6
-        error("Order ord=$(ord) should be [1,2,...,6]")
+    if ord < 1 || ord > MAXORDER
+        error("Order ord=$(ord) should be [1,...,$MAXORDER]")
         return(-1)
     end
 
