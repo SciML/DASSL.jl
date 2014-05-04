@@ -67,7 +67,7 @@ function driver{T<:Number}(F             :: Function,
         # solution
         dassl_norm(v)=norm(v./wt)/sqrt(length(v))
 
-        (status,err,yn)=stepper!(t[end-ord+1:end],y[:,end-ord+1:end],h,F,stuff,wt)
+        (status,err,yn)=stepper!(ord,t,y,h,F,stuff,wt)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -142,8 +142,6 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
 
     available_steps = length(t)
 
-    # println("k=$k, num_fail=$num_fail, as=$available_steps")
-
     if num_fail >= 3
         # probably, the step size was drastically decreased for
         # several steps in a row, so we reduce the order to one and
@@ -174,8 +172,6 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
         r = normalizeStepSize(r,num_fail)
 
     end
-
-    # println("order=$order, r=$r")
 
     return r, order
 
@@ -211,7 +207,7 @@ function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
         elseif false
             # @todo don't increase order two times in a row
             order = k
-        elseif nfixed >= k
+        elseif nfixed >= k+1
             # if the estimate for order k+1 is available
             if nerrors[k-1] <= min(nerrors[k],nerrors[k+1])
                 order = k-1
@@ -227,6 +223,7 @@ function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
 
     # error estimate for the next step
     est = errors[order]
+    # @todo errors[k] is usually much larger than error estimate from the stepper
 
     # initial guess for the new step size multiplier
     r = (2*est+1/10000)^(-1/(order+1))
@@ -281,8 +278,8 @@ end
 # this function estimates the errors of methods of order k-2,k-1,k,k+1
 # and returns the estimates as an array seq the estimates require
 
-# here t is an array of times [t_0, t_1, ..., t_n, t_{n+1}]
-# and y is an array of solutions [y_0, y_1, ..., y_n]
+# here t is an array of times    [t_1, ..., t_n, t_{n+1}]
+# and y is an array of solutions [y_1, ..., y_n]
 function errorEstimates{T<:Number}(t      :: Vector{T},
                                    y      :: Matrix{T},
                                    norm   :: Function,
@@ -339,46 +336,45 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
 end
 
 
-# h=[         h_{n-k+1},    ...   ,                h_{n},       h_{n+1}] --- length = k+1
-# y=[y_{n-k},            y_{n-k+1}, ... , y_{n-1},        y_{n}        ] --- length = k+1
-# k is the order of BDF
-# for reference see p. 119
-function stepper!{T<:Number}(t      :: Vector{T},
+# t is an array [t_1,...,t_n] of length n
+# y is a matrix [y_1,...,y_n] of size k x l
+# h_next is a size of next step
+# F encodes the DAE: F(y,y',t)=0
+# stuff is a bunch of auxilary data saved between steps
+# wt is a vector of weights of the norm
+function stepper!{T<:Number}(ord    :: Integer,
+                             t      :: Vector{T},
                              y      :: Matrix{T},
                              h_next :: T,
                              F      :: Function,
                              stuff  :: StepperStuff{T},
                              wt     :: Vector{T})
 
-    ord      = length(t)        # this is the true order of BDF method
     l        = size(y,1)        # the number of dependent variables
-    h        = [diff(t), h_next]
 
     # sanity check
     # @todo remove it in final version
-    if size(y,2) != length(t)
-        error("Incompatible size of h and y")
-        return(-1)
-    elseif ndims(y) != 2
-        error("ndims(y) != 2")
-        return(-1)
+    if length(t) < ord || size(y,2) < ord
+        error("Not enough point in a grid to use method of order $ord")
     end
+
+    # @todo this should be the view of the tail of the arrays t and y
+    tk = t[end-ord+1:end]
+    yk = y[:,end-ord+1:end]
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
     if ord < 1 || ord > 6
-
         error("Order ord=$(ord) should be [1,2,...,6]")
         return(-1)
-
     end
 
-    t_next   = t[end]+h_next
+    t_next   = tk[end]+h_next
 
     # we use predictor to obtain the starting point for the modified
     # newton method
-    y0  = interpolateAt(t,y,t_next)
-    dy0 = interpolateDerivativeAt(t,y,t_next)
+    y0  = interpolateAt(tk,yk,t_next)
+    dy0 = interpolateDerivativeAt(tk,yk,t_next)
 
     # I think there is an error in the book, the sum should be taken
     # from j=1 to k+1 instead of j=1 to k
@@ -391,13 +387,6 @@ function stepper!{T<:Number}(t      :: Vector{T},
     # sign(h_next*dy0) from the definition of delta because it was
     # causing trouble when dy0==0 (which happens for ord==1)
     delta = jac_delta(y0,dy0,h_next,wt)
-
-    # This is a sanity check, if delta is zero we can't continue, this
-    # shouldn't happen though, so this test should be removed in the
-    # final version
-    if any(delta.==0)
-        error("delta==0")
-    end
 
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
@@ -423,16 +412,27 @@ function stepper!{T<:Number}(t      :: Vector{T},
                           f_newton, # we want to find zeroes of this function
                           norm)     # the norm used to estimate error
 
-    # alpha    = h_next./cumsum(h[end:-1:1])
+    alpha = Array(T,ord+1)
 
-    # alpha0 is needed to estimate error
-    # alpha0   = -sum(alpha)
+    for i = 1:ord
+        alpha[i] = h_next/(t_next-t[end-i+1])
+    end
 
-    # @todo I don't know if this error estimate still holds for
-    # backwards Euler (when ord==1)
-    # M   = max(alpha[ord],abs(alpha[ord]+alphas-alpha0))
-    M   = 1/(ord+1)
-    err = norm(yc-y0)*M
+    if length(t) >= ord+1
+        t0 = t[end-ord]
+    elseif length(t) >= 2
+        # @todo we choose some arbitrary value of t[0], here t[0]:=t[1]-(t[2]-h[1])
+        h1 = t[2]-t[1]
+        t0 = t[1]-h1
+    else
+        t0 = t[1]-h_next
+    end
+
+    alpha[ord+1] = h_next/(t_next-t0)
+
+    alpha0 = -sum(alpha[1:ord])
+    M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
+    err    =  norm(yc-y0)*M
 
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
