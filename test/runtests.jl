@@ -1,9 +1,6 @@
 using dassl
 using Base.Test
 
-# write your own tests here
-@test 1 == 1
-
 F(t,y,dy)=(dy+y)
 sol(t)=exp(-t)
 
