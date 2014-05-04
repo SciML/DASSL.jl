@@ -553,32 +553,6 @@ function newton_iteration{T<:Number}(f    :: Function,
     return(status,y0)
 end
 
-# @todo delete this function
-function predictor{T<:Number}(y :: Matrix{T},
-                              h :: Vector{T})
-    k        = length(h)-1      # k from the book is _not_ the order
-                                # of the BDF method
-    ord      = k+1              # this is the true order of BDF method
-    l        = size(y,1)        # the number of dependent variables
-
-    # these parameters are used by the predictor method
-    psi      = cumsum(h[end:-1:1])
-    alpha    = h[end]./psi
-
-    phi_star = zeros(T,l,ord)
-    for j=1:l, i = 1:ord
-        phi_star[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
-    end
-
-    gamma    = cumsum( [i==1 ? zero(T) : alpha[i-1]/h[end] for i=1:k+1] )
-
-    y0       = sum(phi_star,2)[:,1]
-    dy0      = sum([gamma[i]*phi_star[j,i] for j=1:l, i=1:k+1],2)[:,1]
-
-    # alpha is neede by the stepper method to estimate error
-    return(y0,dy0,alpha)
-end
-
 
 # h=[h_{n-k}, ... , h_{n-1}]
 # y=[y_{n-k}, ... , y_{n-1}, y_{n}]
