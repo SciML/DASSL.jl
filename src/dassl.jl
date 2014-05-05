@@ -303,13 +303,13 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
     # need a four element array k:k+3
     phi    = zeros(T,l,k+3)
     # fill in all but a last (k+3)-rd row of phi
-    for i = 1:k+2
+    for i = k:k+2
         phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[:,end-i+1:end])
     end
 
     sigma  = zeros(T,k+2)
     sigma[1] = 1
-    for i = 2:k+2
+    for i = max(k-1,1):k+2
         sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
     end
 
@@ -648,7 +648,9 @@ function interpolateDerivativeAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
     return p
 end
 
-# returns the value of the interpolation polynomial at the point x0
+# if the interpolating polynomial is given as
+# p(x)=a_{k-1}*x^{k-1}+...a_1*x+a_0 then this function returns the
+# k-th derivative of p, i.e. (k-1)!*a_{k-1}
 function interpolateHighestDerivative{T<:Number}(x::Vector{T}, y::Matrix{T})
 
     if length(x)!=size(y,ndims(y))
