@@ -3,9 +3,7 @@
 
 module dassl
 
-using InterPol
-
-export driver
+export dasslSolve, dasslTestConvergence
 
 const MAXORDER = 6
 
@@ -15,12 +13,12 @@ type StepperStuff{T<:Number}
     evals :: Integer
 end
 
-function driver{T<:Number}(F             :: Function,
-                           y0            :: Vector{T},
-                           tspan         :: Vector{T};
-                           rtol = 1.0e-3 :: T,
-                           atol = 1.0e-3 :: T,
-                           h0   = 1.0e-4 :: T)
+function dasslSolve{T<:Number}(F             :: Function,
+                               y0            :: Vector{T},
+                               tspan         :: Vector{T};
+                               rtol = 1.0e-3 :: T,
+                               atol = 1.0e-5 :: T,
+                               h0   = 1.0e-4 :: T)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
@@ -56,15 +54,16 @@ function driver{T<:Number}(F             :: Function,
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
         if h < hmin
-            warn("Stepsize too small (h=$h at t=$(t[end]), terminating")
+            error("Stepsize too small (h=$h at t=$(t[end]), terminating")
             break
         end
 
         # weights for the norm
         wt = rtol*abs(y[:,end]).+atol
+
         # norm used to determine the local error of the numerical
         # solution
-        dassl_norm(v)=norm(v./wt)/sqrt(length(v))
+        dnorm(v)=norm(v./wt)/sqrt(length(v))
 
         (status,err,yn)=stepper!(ord,t,y,h,F,stuff,wt)
 
@@ -89,7 +88,7 @@ function driver{T<:Number}(F             :: Function,
             # keep track of the total number of rejected steps
             num_rejected += 1
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed,err)
+            (r,ord) = newStepOrder([t, t[end]+h],y,dnorm,ord,num_fail,nfixed,err)
             h *= r
             # error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
             continue
@@ -108,7 +107,7 @@ function driver{T<:Number}(F             :: Function,
             y    = [y   yn]
             push!(ordn, ord)
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed,err)
+            (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dnorm,ord,num_fail,nfixed,err)
 
             if ord_new == ord && r_new == r
                 nfixed += 1
@@ -132,7 +131,7 @@ end
 
 function newStepOrder{T<:Number}(t         :: Vector{T},
                                  y         :: Matrix{T},
-                                 norm      :: Function,
+                                 dnorm     :: Function,
                                  k         :: Integer,
                                  num_fail  :: Integer,
                                  nfixed    :: Integer,
@@ -169,7 +168,7 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,norm,k,nfixed,erk)
+        (r,order) = newStepOrderContinuous(t,y,dnorm,k,nfixed,erk)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
         # if the previous step failed don't increase the order
@@ -186,14 +185,14 @@ end
 
 function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
                                            y      :: Matrix{T},
-                                           norm   :: Function,
+                                           dnorm  :: Function,
                                            k      :: Integer,
                                            nfixed :: Integer,
                                            erk    :: T)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
-    errors  = errorEstimates(t,y,norm,k,nfixed)
+    errors  = errorEstimates(t,y,dnorm,k,nfixed)
     errors[k] = erk
     # normalized errors, this is TERK from DASSL
     nerrors = errors .* [2:MAXORDER+1]
@@ -289,7 +288,7 @@ end
 # and y is an array of solutions [y_1, ..., y_n]
 function errorEstimates{T<:Number}(t      :: Vector{T},
                                    y      :: Matrix{T},
-                                   norm   :: Function,
+                                   dnorm  :: Function,
                                    k      :: Integer,
                                    nfixed :: Integer)
 
@@ -309,21 +308,21 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
 
     sigma  = zeros(T,k+2)
     sigma[1] = 1
-    for i = max(k-1,1):k+2
+    for i = 2:k+2
         sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
     end
 
     errors    = zeros(T,MAXORDER)
-    errors[k] = sigma[k+1]*norm(phi[:,k+2])
+    errors[k] = sigma[k+1]*dnorm(phi[:,k+2])
 
     if k >= 2
         # error estimate for order k-1
-        errors[k-1] = sigma[k]*norm(phi[:,k+1])
+        errors[k-1] = sigma[k]*dnorm(phi[:,k+1])
     end
 
     if k >= 3
         # error estimate for order k-2
-        errors[k-2] = sigma[k-1]*norm(phi[:,k])
+        errors[k-2] = sigma[k-1]*dnorm(phi[:,k])
     end
 
     if k <= 5 && nfixed >= k+1
@@ -334,7 +333,7 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
         end
 
         # estimate for the order k+1
-        errors[k+1] = norm(phi[:,k+3])
+        errors[k+1] = dnorm(phi[:,k+3])
     end
 
     # return error estimates (this is ERK{M2,M1,,P1} from DASSL)
@@ -435,7 +434,7 @@ function stepper!{T<:Number}(ord    :: Integer,
 
     alpha0 = -sum(alpha[1:ord])
     M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
-    err    =  norm(yc-y0)*M
+    err    =  dassl_norm((yc-y0),wt)*M
 
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
@@ -673,6 +672,37 @@ function interpolateHighestDerivative{T<:Number}(x::Vector{T}, y::Matrix{T})
         p+=Li*y[:,i]
     end
     return p
+end
+
+
+function dasslTestConvergence(F,y0,tspan,sol,rtol_range,atol_range)
+    T = eltype(y0)
+    n = length(rtol_range)
+
+    norms_abs = zeros(T,n)
+    norms_rel = zeros(T,n)
+    times     = zeros(T,n)
+
+    for i = 1:n
+        times[i] = @elapsed (tn,yn)=dasslSolve(F,y0,tspan,
+                                               rtol = rtol_range[i],
+                                               atol = atol_range[i])
+        k = length(tn)
+        delta_rel = zeros(T,k)
+        delta_abs = zeros(T,k)
+
+        for j = 1:k
+            t = tn[j]
+            delta_abs[j] = norm(sol(t)-yn[:,j], Inf)
+            delta_rel[j] = norm(sol(t)-yn[:,j], Inf)/norm(sol(t), Inf)
+        end
+
+        norms_abs[i]=norm(delta_abs,Inf)
+        norms_rel[i]=norm(delta_rel,Inf)
+
+    end
+
+    return norms_abs, norms_rel, times
 end
 
 end
