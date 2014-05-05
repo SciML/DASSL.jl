@@ -34,6 +34,8 @@ function driver{T<:Number}(F             :: Function,
     # zip the stepper temporary variables in a type
     stuff = StepperStuff(a,g,0)
 
+    wt = zeros(T,length(y0))
+
     ord      = 1                    # initial method order
     t        = [t_start]            # initial time
     h        = h0                   # current step size
@@ -50,11 +52,6 @@ function driver{T<:Number}(F             :: Function,
 
     while t[end] < t_stop
 
-
-        # if  num_accepted + num_rejected >  10000
-        #     break
-        # end
-
         epsilon = eps(one(T))
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
@@ -70,8 +67,6 @@ function driver{T<:Number}(F             :: Function,
         dassl_norm(v)=norm(v./wt)/sqrt(length(v))
 
         (status,err,yn)=stepper!(ord,t,y,h,F,stuff,wt)
-
-        evalsn=[evalsn, stuff.evals]
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -109,9 +104,9 @@ function driver{T<:Number}(F             :: Function,
             num_accepted += 1
 
             # save the results
-            t    = [t,  t[end]+h]
+            push!(t,t[end]+h)
             y    = [y   yn]
-            ordn = [ordn, ord]
+            push!(ordn, ord)
             # determine the new step size and order, including the current step
             (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dassl_norm,ord,num_fail,nfixed,err)
 
@@ -308,8 +303,8 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
     # need a four element array k:k+3
     phi    = zeros(T,l,k+3)
     # fill in all but a last (k+3)-rd row of phi
-    for j=1:l, i = 1:k+2
-        phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
+    for i = 1:k+2
+        phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[:,end-i+1:end])
     end
 
     sigma  = zeros(T,k+2)
@@ -334,8 +329,8 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
     if k <= 5 && nfixed >= k+1
         # error estimate for order k+1
         # fill in the rest of the phi array (the (k+3)-rd row)
-        for j=1:l, i = k+3:k+3
-            phi[j,i] = prod(psi[1:i-1])*div_diff(h[end-i+1:end-1],y[j,end-i+1:end][:])
+        for i = k+3:k+3
+            phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[:,end-i+1:end])
         end
 
         # estimate for the order k+1
@@ -412,17 +407,13 @@ function stepper!{T<:Number}(ord    :: Integer,
     # udpated, corrector will replace stuff.a with a_new
     a_new=a
 
-    # the norm used to test convergence of the newton method.  The
-    # norm depends on the solution y0 through the weights wt.
-    norm(v)=dassl_norm(v,wt)
-
     # we compute the corrected value "yc", updating the gradient if necessary
     (status,yc)=corrector(stuff,    # old coefficient a and jacobian
                           a_new,    # current coefficient a
                           g_new,    # this function is called when new jacobian is needed
                           y0,       # starting point for modified newton
                           f_newton, # we want to find zeroes of this function
-                          norm)     # the norm used to estimate error
+                          wt)       # the norm used to estimate error needs weights
 
     alpha = Array(T,ord+1)
 
@@ -462,7 +453,7 @@ function corrector{T<:Number}(stuff    :: StepperStuff{T},
                               g_new    :: Function,
                               y0       :: Vector{T},
                               f_newton :: Function,
-                              norm     :: Function)
+                              wt       :: Vector{T})
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -473,14 +464,14 @@ function corrector{T<:Number}(stuff    :: StepperStuff{T},
         stuff.evals += 1
         stuff.a=a_new
         # run the corrector
-        (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, norm)
+        (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, wt)
     else
         # old jacobian should give reasonable convergence
         c=2*stuff.a/(a_new+stuff.a)     # factor "c" is used to speed up
                                     # the convergence when using an
                                     # old jacobian
         # reusing the old jacobian
-        (status,yc)=newton_iteration( x->(-c*(stuff.g\f_newton(x))), y0, norm )
+        (status,yc)=newton_iteration( x->(-c*(stuff.g\f_newton(x))), y0, wt)
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
@@ -488,7 +479,7 @@ function corrector{T<:Number}(stuff    :: StepperStuff{T},
             stuff.evals += 1
             stuff.a=a_new
             # run the corrector again
-            (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, norm )
+            (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, wt)
         end
     end
 
@@ -501,15 +492,15 @@ end
 # from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration{T<:Number}(f    :: Function,
-                                     y0   :: Vector{T},
-                                     norm :: Function)
+function newton_iteration{T<:Number}(f  :: Function,
+                                     y0 :: Vector{T},
+                                     wt :: Vector{T})
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
 
     delta=f(y0)
-    norm1=norm(delta)
+    norm1=dassl_norm(delta,wt)
     yn=y0+delta
 
     # after the first iteration the norm turned out to be very small,
@@ -525,7 +516,7 @@ function newton_iteration{T<:Number}(f    :: Function,
     for i=1:3
 
         delta=f(yn)
-        normn=norm(delta)
+        normn=dassl_norm(delta,wt)
         rho=(normn/norm1)^(1/i)
         yn=yn+delta
 
@@ -601,18 +592,17 @@ end
 
 
 # returns the value of the interpolation polynomial at the point x0
-function interpolateAt{T<:Number,N}(x::Vector{T}, y::AbstractArray{T,N}, x0::T)
+function interpolateAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
 
     if length(x)!=size(y,ndims(y))
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zero(T)
+    p = zeros(T,size(y,1))
 
     for i=1:n
         Li =one(T)
-        dLi=zero(T)
         for j=1:n
             if j==i
                 continue
@@ -620,21 +610,21 @@ function interpolateAt{T<:Number,N}(x::Vector{T}, y::AbstractArray{T,N}, x0::T)
                 Li*=(x0-x[j])/(x[i]-x[j])
             end
         end
-        p.+=Li.*y[[[1:size(y,n) for n=1:N-1],i]...]
+        p+=Li*y[:,i]
     end
     return p
 end
 
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
-function interpolateDerivativeAt{T<:Number,N}(x::Vector{T}, y::AbstractArray{T,N}, x0::T)
+function interpolateDerivativeAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
 
     if length(x)!=size(y,ndims(y))
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zero(T)
+    p = zeros(T,size(y,1))
 
     for i=1:n
         dLi=zero(T)
@@ -653,10 +643,34 @@ function interpolateDerivativeAt{T<:Number,N}(x::Vector{T}, y::AbstractArray{T,N
                 dLi+=dLi1/(x[i]-x[k])
             end
         end
-        p.+=dLi.*y[[[1:size(y,n) for n=1:N-1],i]...]
+        p+=dLi*y[:,i]
     end
     return p
 end
 
+# returns the value of the interpolation polynomial at the point x0
+function interpolateHighestDerivative{T<:Number}(x::Vector{T}, y::Matrix{T})
+
+    if length(x)!=size(y,ndims(y))
+        error("x and y have to be of the same size.")
+    end
+
+    n = length(x)
+    p = zeros(T,size(y,1))
+    Li =one(T)
+
+    for i=1:n
+        Li =one(T)
+        for j=1:n
+            if j==i
+                continue
+            else
+                Li*=1/(x[i]-x[j])
+            end
+        end
+        p+=Li*y[:,i]
+    end
+    return p
+end
 
 end
