@@ -3,7 +3,7 @@
 
 module dassl
 
-export dasslSolve, dasslTestConvergence
+export dasslSolve
 
 const MAXORDER = 6
 
@@ -675,9 +675,21 @@ function interpolateHighestDerivative{T<:Number}(x::Vector{T}, y::Matrix{T})
     return p
 end
 
+# test the convergence of dasslSolve.  dasslTestConvergence returns a
+# tuple of relative and absolute L^Inf norms of a difference of
+# analytic and numerical solutions.  The third element in the returned
+# touple is the time it took to obtain the numerical solution.
+function dasslTestConvergence{T<:Number}(F          :: Function,  # equation to solve
+                                         y0         :: Vector{T}, # initial data
+                                         tspan      :: Vector{T}, # time span of a solution
+                                         sol        :: Function,  # analytic solution, for comparison with numerical solution
+                                         rtol_range :: Vector{T}, # vector of relative tolerances
+                                         atol_range :: Vector{T}) # vector of absolute tolerances
 
-function dasslTestConvergence(F,y0,tspan,sol,rtol_range,atol_range)
-    T = eltype(y0)
+    if length(rtol_range) != length(atol_range)
+        error("The table of relative errors and absolute errors should be of the same size.")
+    end
+
     n = length(rtol_range)
 
     norms_abs = zeros(T,n)
@@ -703,7 +715,47 @@ function dasslTestConvergence(F,y0,tspan,sol,rtol_range,atol_range)
 
     end
 
-    return norms_abs, norms_rel, times
+    return norms_rel, norms_abs, times
+end
+
+
+function dasslDrawConvergence{T<:Number}(F     :: Function,  # equation to solve
+                                         y0    :: Vector{T}, # initial data
+                                         tspan :: Vector{T}, # time span of a solution
+                                         sol   :: Function,  # analytic solution, for comparison with numerical solution
+                                         rtol  :: Vector{T}, # vector of relative tolerances
+                                         atol  :: Vector{T}) # vector of absolute tolerances
+
+    # run the dasslSolve to trigger the compilation
+    dasslSolve(F,y0,tspan)
+
+    # run the convergence tests
+    (rerr,aerr,time) = dasslTestConvergence(F,y0,tspan,sol,rtol,atol)
+
+    tbl = Table(1,3)
+
+    tbl[1,1] = FramedPlot(title  = "Absolute error",
+                          xlabel = "Absolute tolerance",
+                          ylabel = "Absolute error",
+                          logx   = true,
+                          logy   = true)
+    tbl[1,2] = FramedPlot(title  = "Relative error",
+                          xlabel = "Relative tolerance",
+                          ylabel = "Relative error",
+                          logx   = true,
+                          logy   = true)
+    tbl[1,3] = FramedPlot(title  = "Execution time",
+                          xlabel = "Relative error",
+                          ylabel = "Elapsed time",
+                          logx   = true,
+                          logy   = true)
+
+    add(tbl[1,1], Points(atol,aerr))
+    add(tbl[1,2], Points(rtol,rerr))
+    add(tbl[1,3], Points(rerr,time))
+
+    return tbl
+
 end
 
 end
