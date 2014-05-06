@@ -63,23 +63,53 @@ function dasslDrawConvergence{T<:Number}(F     :: Function,  # equation to solve
     tbl[1,1] = FramedPlot(title  = "Absolute error",
                           xlabel = "Absolute tolerance",
                           ylabel = "Absolute error",
-                          logx   = true,
-                          logy   = true)
+                          xlog   = true,
+                          ylog   = true)
     tbl[1,2] = FramedPlot(title  = "Relative error",
                           xlabel = "Relative tolerance",
                           ylabel = "Relative error",
-                          logx   = true,
-                          logy   = true)
+                          xlog   = true,
+                          ylog   = true)
     tbl[1,3] = FramedPlot(title  = "Execution time",
                           xlabel = "Relative error",
                           ylabel = "Elapsed time",
-                          logx   = true,
-                          logy   = true)
+                          xlog   = true,
+                          ylog   = true)
 
     add(tbl[1,1], Points(atol,aerr))
     add(tbl[1,2], Points(rtol,rerr))
     add(tbl[1,3], Points(rerr,time))
 
+    setattr(tbl, aspect_ratio=0.3)
+
     return tbl
 
 end
+
+
+#------------------------------------------------------------
+# index-1 example
+#------------------------------------------------------------
+
+function F1{T<:Number}(t::T,y::Array{T,1},dy::Array{T,1})
+    a=10.0
+    [-dy[1]+(a-1/(2-t))*y[1]+(2-t)*a*y[3]+exp(t)*(3-t)/(2-t),
+     -dy[2]+(1-a)/(t-2)*y[1]-y[2]+(a-1)*y[3]+2*exp(t),
+     (t+2)*y[1]+(t^2-4)*y[2]-(t^2+t-2)*exp(t)]
+end
+
+function sol1{T<:Number}(t::T)
+    a=10.0
+    [exp(t),
+     exp(t),
+     -exp(t)/(2-t)]
+end
+
+const y1     = sol1(0.0)
+const tspan1 = [0.0, 1.0]
+
+const rtol=10.0.^-[1.0:0.1:5.0]
+const atol=0.01*rtol
+
+tbl=dasslDrawConvergence(F1,y1,tspan1,sol1,rtol,atol)
+display(tbl)
