@@ -10,7 +10,7 @@ const MAXORDER = 6
 type StepperStuff{T<:Number}
     a     :: T
     g     :: Matrix{T}
-    evals :: Integer
+    evals :: Int
 end
 
 function dasslSolve{T<:Number}(F             :: Function,
