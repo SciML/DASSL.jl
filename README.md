@@ -1,4 +1,4 @@
-dassl.jl
+DASSL.jl
 ========
 
 An implementation of DASSL algorithm for solving algebraic differential equations.
@@ -6,7 +6,7 @@ An implementation of DASSL algorithm for solving algebraic differential equation
 Usage example:
 
 ```
-using dassl
+using DASSL
 F(t,y,dy)=dy+y     # the equation solved is F(t,y,dy)=0
 y0=[1.0]           # the initial value
 tspan=[0.0,10.0]   # time span over which we integrate

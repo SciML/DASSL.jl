@@ -1,5 +1,5 @@
 using Winston
-using dassl
+using DASSL
 
 # test the convergence of dasslSolve.  dasslTestConvergence returns a
 # tuple of relative and absolute L^Inf norms of a difference of

@@ -1,4 +1,4 @@
-using dassl
+using DASSL
 using Base.Test
 
 F(t,y,dy)=(dy+y)

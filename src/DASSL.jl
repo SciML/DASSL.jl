@@ -1,7 +1,7 @@
 # @todo better estimate on error of order k (error[k])
 # @todo changing MAXORDER to 3 results in BoundsError()
 
-module dassl
+module DASSL
 
 export dasslSolve
 
