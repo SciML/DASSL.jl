@@ -55,7 +55,8 @@ function dasslSolve{T<:Number}(F             :: Function,
 
         if h < hmin
             error("Stepsize too small (h=$h at t=$(t[end]), terminating")
-            break
+        elseif num_fail >= 10
+            error("Too many failed steps in a row (h=$h at t=$(t[end]), terminating")
         end
 
         # weights for the norm
