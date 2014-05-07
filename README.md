@@ -3,6 +3,12 @@ DASSL.jl
 
 An implementation of DASSL algorithm for solving algebraic differential equations.
 
+To inastall run
+
+```
+Pkg.add("DASSL")
+```
+
 Usage example:
 
 ```
@@ -20,4 +26,7 @@ error tolerance `atol` as well as initial step size `h0` as follows
 dasslSolve(F,y0,tspan,rtol=10.0^-3,atol=10.0^-5,h0=10.0^-4) # returns (tn,yn)
 ```
 
-[![Build Status](https://travis-ci.org/pwl/dassl.jl.png)](https://travis-ci.org/pwl/dassl.jl)
+You can test the convergence and execution time for index-1 problem by
+running `convergence.jl` from the `test` directory.
+
+[![Build Status](https://travis-ci.org/pwl/DASSL.jl.png)](https://travis-ci.org/pwl/DASSL.jl)
