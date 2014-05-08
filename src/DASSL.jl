@@ -1,4 +1,3 @@
-# @todo better estimate on error of order k (error[k])
 # @todo changing MAXORDER to 3 results in BoundsError()
 
 module DASSL
@@ -10,7 +9,6 @@ const MAXORDER = 6
 type StepperStuff{T<:Number}
     a     :: T
     g     :: Matrix{T}
-    evals :: Int
 end
 
 function dasslSolve{T<:Number}(F             :: Function,
@@ -38,15 +36,14 @@ function dasslSolve{T<:Number}(F             :: Function,
     t        = [t_start]            # initial time
     h        = h0                   # current step size
     y        = hcat(y0)             # initial data
+    num_rejected = 0                # number of rejected steps
     num_fail = 0                    # number of consecutive failures
-    num_accepted = 0
-    num_rejected = 0
-    nfixed = 0
+    nfixed   = 1                    # number of steps with fixed order
+                                    # and stepsize taken in a
+                                    # row.  Needed to make a decision
+                                    # on the order of the next step
 
-    ordn = [ord]
-    evalsn = [0]
-    r = 1
-    ord = 1
+    r   = one(T)
 
     while t[end] < t_stop
 
@@ -54,9 +51,9 @@ function dasslSolve{T<:Number}(F             :: Function,
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
         if h < hmin
-            error("Stepsize too small (h=$h at t=$(t[end]), terminating")
+            error("Stepsize too small (h=$h at t=$(t[end]).")
         elseif num_fail >= 10
-            error("Too many failed steps in a row (h=$h at t=$(t[end]), terminating")
+            error("Too many failed steps in a row (h=$h at t=$(t[end]).")
         end
 
         # weights for the norm
@@ -91,7 +88,6 @@ function dasslSolve{T<:Number}(F             :: Function,
             # determine the new step size and order, excluding the current step
             (r,ord) = newStepOrder([t, t[end]+h],y,dnorm,ord,num_fail,nfixed,err)
             h *= r
-            # error("ord -> ord+1 ale nie zaakceptowaliśmy wcześniejszego kroku")
             continue
 
         else
@@ -101,12 +97,10 @@ function dasslSolve{T<:Number}(F             :: Function,
 
             # reset the failure counter
             num_fail      = 0
-            num_accepted += 1
 
             # save the results
             push!(t,t[end]+h)
             y    = [y   yn]
-            push!(ordn, ord)
             # determine the new step size and order, including the current step
             (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dnorm,ord,num_fail,nfixed,err)
 
@@ -125,7 +119,7 @@ function dasslSolve{T<:Number}(F             :: Function,
 
     end
 
-    return(t,y,ordn,evalsn,num_accepted,num_rejected)
+    return(t,y,num_rejected)
 
 end
 
@@ -133,9 +127,9 @@ end
 function newStepOrder{T<:Number}(t         :: Vector{T},
                                  y         :: Matrix{T},
                                  dnorm     :: Function,
-                                 k         :: Integer,
-                                 num_fail  :: Integer,
-                                 nfixed    :: Integer,
+                                 k         :: Int,
+                                 num_fail  :: Int,
+                                 nfixed    :: Int,
                                  erk       :: T)
 
     if length(t) != size(y,2)+1
@@ -159,7 +153,7 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
             # and the step size
             (r,order) = (2,min(k+1,MAXORDER))
         else
-            # @todo fix this step, I am not sure about the choice of order
+            # @todo I am not sure about the choice of order
             #
             # previous step was rejected, we have to decrease the step
             # size and order
@@ -187,8 +181,8 @@ end
 function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
                                            y      :: Matrix{T},
                                            dnorm  :: Function,
-                                           k      :: Integer,
-                                           nfixed :: Integer,
+                                           k      :: Int,
+                                           nfixed :: Int,
                                            erk    :: T)
 
     # compute the error estimates of methods of order k-2, k-1, k and
@@ -244,7 +238,7 @@ end
 # num_fail is the number of steps that failed before this step, r is a
 # suggested step size multiplier.
 function normalizeStepSize{T<:Number}(r        :: T,
-                                      num_fail :: Integer)
+                                      num_fail :: Int)
 
     if num_fail == 0
         # previous step was accepted
@@ -267,13 +261,6 @@ function normalizeStepSize{T<:Number}(r        :: T,
         # probably not reliable so decrease the step size
         r = 1/4
 
-    elseif num_fail >= 3
-        # @todo remove this case
-        #
-        # this should never be the case, it should be covered by the
-        # newStepOrder function
-        error("num_fail >= 3 inside normalizeStepSize")
-
     end
 
     return r
@@ -290,8 +277,8 @@ end
 function errorEstimates{T<:Number}(t      :: Vector{T},
                                    y      :: Matrix{T},
                                    dnorm  :: Function,
-                                   k      :: Integer,
-                                   nfixed :: Integer)
+                                   k      :: Int,
+                                   nfixed :: Int)
 
     h = diff(t)
 
@@ -349,7 +336,7 @@ end
 # F encodes the DAE: F(y,y',t)=0
 # stuff is a bunch of auxilary data saved between steps
 # wt is a vector of weights of the norm
-function stepper!{T<:Number}(ord    :: Integer,
+function stepper!{T<:Number}(ord    :: Int,
                              t      :: Vector{T},
                              y      :: Matrix{T},
                              h_next :: T,
@@ -461,7 +448,6 @@ function corrector{T<:Number}(stuff    :: StepperStuff{T},
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
         stuff.g=g_new()
-        stuff.evals += 1
         stuff.a=a_new
         # run the corrector
         (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, wt)
@@ -476,7 +462,6 @@ function corrector{T<:Number}(stuff    :: StepperStuff{T},
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
             stuff.g=g_new()
-            stuff.evals += 1
             stuff.a=a_new
             # run the corrector again
             (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, wt)
@@ -545,23 +530,6 @@ function newton_iteration{T<:Number}(f  :: Function,
 end
 
 
-# h=[h_{n-k}, ... , h_{n-1}]
-# y=[y_{n-k}, ... , y_{n-1}, y_{n}]
-function div_diff{T<:Number}(h :: Vector{T},
-                             y :: Vector{T})
-    if length(y) < 1
-        error("length(y) is $(length(y)) in div_diff, should be >=1")
-        return 0::T
-    elseif length(y) == 1
-        return y[1]::T
-    elseif length(y) == 2
-        return ((y[2]-y[1])/h[1])::T
-    else
-        return ((div_diff(h[2:end],y[2:end])-div_diff(h[1:end-1],y[1:end-1]))/sum(h))::T
-    end
-end
-
-
 function dassl_norm{T<:Number}(v  :: Vector{T},
                                wt :: Vector{T})
     norm(v./wt)/sqrt(length(v))
@@ -580,6 +548,7 @@ function G{T<:Number}(f     :: Function,
     end
     return(s)
 end
+
 
 function jac_delta{T<:Number}(y0     :: Vector{T}
                               ,dy0   :: Vector{T},
@@ -615,6 +584,7 @@ function interpolateAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
     return p
 end
 
+
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
 function interpolateDerivativeAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
@@ -647,6 +617,7 @@ function interpolateDerivativeAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
     end
     return p
 end
+
 
 # if the interpolating polynomial is given as
 # p(x)=a_{k-1}*x^{k-1}+...a_1*x+a_0 then this function returns the
