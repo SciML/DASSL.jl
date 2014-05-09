@@ -28,7 +28,7 @@ function dasslSolve{T<:Number}(F             :: Function,
     # stepper!
     a = zero(T)
     # zip the stepper temporary variables in a type
-    stuff = StepperStuff(a,g,0)
+    stuff = StepperStuff(a,g)
 
     wt = zeros(T,length(y0))
 
