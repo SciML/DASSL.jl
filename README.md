@@ -30,3 +30,4 @@ You can test the convergence and execution time for index-1 problem by
 running `convergence.jl` from the `test` directory.
 
 [![Build Status](https://travis-ci.org/pwl/DASSL.jl.png)](https://travis-ci.org/pwl/DASSL.jl)
+[![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
