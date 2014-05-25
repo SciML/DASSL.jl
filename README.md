@@ -31,3 +31,4 @@ running `convergence.jl` from the `test` directory.
 
 [![Build Status](https://travis-ci.org/pwl/DASSL.jl.png)](https://travis-ci.org/pwl/DASSL.jl)
 [![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
+[![Package Evaluator](http://iainnz.github.io/packages.julialang.org/badges/DASSL_0.2.svg)](http://iainnz.github.io/packages.julialang.org/?pkg=DASSL&ver=0.2)
