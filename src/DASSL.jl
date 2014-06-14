@@ -6,24 +6,24 @@ export dasslSolve
 
 const MAXORDER = 6
 
-type StepperStuff{T<:Number}
+type StepperStuff{T<:Real,Ty<:Number}
     a     :: T
-    g     :: Matrix{T}
+    g     :: Matrix{Ty}
 end
 
-function dasslSolve{T<:Number}(F             :: Function,
-                               y0            :: Vector{T},
-                               tspan         :: Vector{T};
-                               rtol = 1.0e-3 :: T,
-                               atol = 1.0e-5 :: T,
-                               h0   = 1.0e-4 :: T)
+function dasslSolve{T<:Real,Ty<:Number}(F             :: Function,
+                                        y0            :: Vector{Ty},
+                                        tspan         :: Vector{T};
+                                        rtol = 1.0e-3 :: T,
+                                        atol = 1.0e-5 :: T,
+                                        h0   = 1.0e-4 :: T)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
-    g = zeros(T,length(y0),length(y0))
+    g = zeros(Ty,length(y0),length(y0))
     # The parameter a has to be kept between consecutive calls of
     # stepper!
     a = zero(T)
@@ -39,9 +39,9 @@ function dasslSolve{T<:Number}(F             :: Function,
     num_rejected = 0                # number of rejected steps
     num_fail = 0                    # number of consecutive failures
     nfixed   = 1                    # number of steps with fixed order
-                                    # and stepsize taken in a
-                                    # row.  Needed to make a decision
-                                    # on the order of the next step
+    # and stepsize taken in a
+    # row.  Needed to make a decision
+    # on the order of the next step
 
     r   = one(T)
 
@@ -124,13 +124,13 @@ function dasslSolve{T<:Number}(F             :: Function,
 end
 
 
-function newStepOrder{T<:Number}(t         :: Vector{T},
-                                 y         :: Matrix{T},
-                                 dnorm     :: Function,
-                                 k         :: Int,
-                                 num_fail  :: Int,
-                                 nfixed    :: Int,
-                                 erk       :: T)
+function newStepOrder{T<:Real,Ty<:Number}(t         :: Vector{T},
+                                          y         :: Matrix{Ty},
+                                          dnorm     :: Function,
+                                          k         :: Int,
+                                          num_fail  :: Int,
+                                          nfixed    :: Int,
+                                          erk       :: T)
 
     if length(t) != size(y,2)+1
         error("incompatible size of y and t")
@@ -178,12 +178,12 @@ function newStepOrder{T<:Number}(t         :: Vector{T},
 end
 
 
-function newStepOrderContinuous{T<:Number}(t      :: Vector{T},
-                                           y      :: Matrix{T},
-                                           dnorm  :: Function,
-                                           k      :: Int,
-                                           nfixed :: Int,
-                                           erk    :: T)
+function newStepOrderContinuous{T<:Real,Ty<:Number}(t      :: Vector{T},
+                                                    y      :: Matrix{Ty},
+                                                    dnorm  :: Function,
+                                                    k      :: Int,
+                                                    nfixed :: Int,
+                                                    erk    :: T)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
@@ -237,8 +237,8 @@ end
 #
 # num_fail is the number of steps that failed before this step, r is a
 # suggested step size multiplier.
-function normalizeStepSize{T<:Number}(r        :: T,
-                                      num_fail :: Int)
+function normalizeStepSize{T<:Real}(r        :: T,
+                                    num_fail :: Int)
 
     if num_fail == 0
         # previous step was accepted
@@ -274,11 +274,11 @@ end
 
 # here t is an array of times    [t_1, ..., t_n, t_{n+1}]
 # and y is an array of solutions [y_1, ..., y_n]
-function errorEstimates{T<:Number}(t      :: Vector{T},
-                                   y      :: Matrix{T},
-                                   dnorm  :: Function,
-                                   k      :: Int,
-                                   nfixed :: Int)
+function errorEstimates{T<:Real,Ty<:Number}(t      :: Vector{T},
+                                            y      :: Matrix{Ty},
+                                            dnorm  :: Function,
+                                            k      :: Int,
+                                            nfixed :: Int)
 
     h = diff(t)
 
@@ -288,7 +288,7 @@ function errorEstimates{T<:Number}(t      :: Vector{T},
 
     # @todo there is no need to allocate array of size 1:k+3, we only
     # need a four element array k:k+3
-    phi    = zeros(T,l,k+3)
+    phi    = zeros(Ty,l,k+3)
     # fill in all but a last (k+3)-rd row of phi
     for i = k:k+2
         phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[:,end-i+1:end])
@@ -336,13 +336,13 @@ end
 # F encodes the DAE: F(y,y',t)=0
 # stuff is a bunch of auxilary data saved between steps
 # wt is a vector of weights of the norm
-function stepper!{T<:Number}(ord    :: Int,
-                             t      :: Vector{T},
-                             y      :: Matrix{T},
-                             h_next :: T,
-                             F      :: Function,
-                             stuff  :: StepperStuff{T},
-                             wt     :: Vector{T})
+function stepper!{T<:Real,Ty<:Number}(ord    :: Int,
+                                      t      :: Vector{T},
+                                      y      :: Matrix{Ty},
+                                      h_next :: T,
+                                      F      :: Function,
+                                      stuff  :: StepperStuff{T},
+                                      wt     :: Vector{T})
 
     l        = size(y,1)        # the number of dependent variables
 
@@ -435,12 +435,12 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T<:Number}(stuff    :: StepperStuff{T},
-                              a_new    :: T,
-                              g_new    :: Function,
-                              y0       :: Vector{T},
-                              f_newton :: Function,
-                              wt       :: Vector{T})
+function corrector{T<:Real,Ty<:Number}(stuff    :: StepperStuff{T},
+                                       a_new    :: T,
+                                       g_new    :: Function,
+                                       y0       :: Vector{Ty},
+                                       f_newton :: Function,
+                                       wt       :: Vector{T})
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -454,8 +454,8 @@ function corrector{T<:Number}(stuff    :: StepperStuff{T},
     else
         # old jacobian should give reasonable convergence
         c=2*stuff.a/(a_new+stuff.a)     # factor "c" is used to speed up
-                                    # the convergence when using an
-                                    # old jacobian
+        # the convergence when using an
+        # old jacobian
         # reusing the old jacobian
         (status,yc)=newton_iteration( x->(-c*(stuff.g\f_newton(x))), y0, wt)
 
@@ -477,9 +477,9 @@ end
 # from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration{T<:Number}(f  :: Function,
-                                     y0 :: Vector{T},
-                                     wt :: Vector{T})
+function newton_iteration{T<:Real,Ty<:Number}(f  :: Function,
+                                              y0 :: Vector{Ty},
+                                              wt :: Vector{T})
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -530,19 +530,19 @@ function newton_iteration{T<:Number}(f  :: Function,
 end
 
 
-function dassl_norm{T<:Number}(v  :: Vector{T},
-                               wt :: Vector{T})
+function dassl_norm{T<:Real,Ty<:Number}(v  :: Vector{Ty},
+                                        wt :: Vector{T})
     norm(v./wt)/sqrt(length(v))
 end
 
 # compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
 # @todo replace with symmetric finite difference?
-function G{T<:Number}(f     :: Function,
-                      y0    :: Vector{T},
-                      delta :: Vector{T})
+function G{T<:Real,Ty<:Number}(f     :: Function,
+                               y0    :: Vector{Ty},
+                               delta :: Vector{T})
     n=length(y0)
     edelta=diagm(delta)
-    s=Array(eltype(delta),n,n)
+    s=Array(Ty,n,n)
     for i=1:n
         s[:,i]=(f(y0+edelta[:,i])-f(y0))/delta[i]
     end
@@ -550,10 +550,10 @@ function G{T<:Number}(f     :: Function,
 end
 
 
-function jac_delta{T<:Number}(y0     :: Vector{T}
-                              ,dy0   :: Vector{T},
-                              h_next :: T,
-                              wt     :: Vector{T})
+function jac_delta{T<:Real,Ty<:Number}(y0     :: Vector{Ty},
+                                       dy0    :: Vector{Ty},
+                                       h_next :: T,
+                                       wt     :: Vector{T})
     d = [ max(abs(y0[j]),abs(h_next*dy0[j]),wt[j]) for j=1:length(y0)]
     d*= sqrt(eps(T))
     return d
@@ -561,14 +561,16 @@ end
 
 
 # returns the value of the interpolation polynomial at the point x0
-function interpolateAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
+function interpolateAt{T<:Real,Ty<:Number}(x::Vector{T},
+                                           y::Matrix{Ty},
+                                           x0::T)
 
     if length(x)!=size(y,ndims(y))
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zeros(T,size(y,1))
+    p = zeros(Ty,size(y,1))
 
     for i=1:n
         Li =one(T)
@@ -587,14 +589,16 @@ end
 
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
-function interpolateDerivativeAt{T<:Number}(x::Vector{T}, y::Matrix{T}, x0::T)
+function interpolateDerivativeAt{T<:Real,Ty<:Number}(x::Vector{T},
+                                                     y::Matrix{Ty},
+                                                     x0::T)
 
     if length(x)!=size(y,ndims(y))
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zeros(T,size(y,1))
+    p = zeros(Ty,size(y,1))
 
     for i=1:n
         dLi=zero(T)
@@ -622,14 +626,15 @@ end
 # if the interpolating polynomial is given as
 # p(x)=a_{k-1}*x^{k-1}+...a_1*x+a_0 then this function returns the
 # k-th derivative of p, i.e. (k-1)!*a_{k-1}
-function interpolateHighestDerivative{T<:Number}(x::Vector{T}, y::Matrix{T})
+function interpolateHighestDerivative{T<:Real,Ty<:Number}(x::Vector{T},
+                                                          y::Matrix{Ty})
 
     if length(x)!=size(y,ndims(y))
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zeros(T,size(y,1))
+    p = zeros(Ty,size(y,1))
     Li =one(T)
 
     for i=1:n
