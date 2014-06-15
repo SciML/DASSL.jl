@@ -11,30 +11,32 @@ type StepperStuff
     g
 end
 
-function dasslSolve{T<:Real}(F             :: Function,
-                             y0,
-                             tspan         :: Vector{T};
-                             rtol = 1.0e-3 :: T,
-                             atol = 1.0e-5 :: T,
-                             h0   = 1.0e-4 :: T)
+function dasslSolve(F             :: Function,
+                    y0,
+                    tspan         :: Vector;
+                    rtol = 1.0e-3,
+                    atol = 1.0e-5,
+                    h0   = 1.0e-4)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
-    if typeof(y0) == Number
+    if typeof(y0) <: Number
         g = zero(y0)
-    else
+    elseif typeof(y0) <: Vector
         g = zeros(eltype(y0),length(y0),length(y0))
+    else
+        error("Unsupported type of y0; y0 should be a Number or a Vector")
     end
     # The parameter a has to be kept between consecutive calls of
     # stepper!
-    a = zero(T)
+    a = zero(h0)
     # zip the stepper temporary variables in a type
     stuff = StepperStuff(a,g)
 
-    wt = zeros(T,length(y0))
+    wt = zero(abs(y0))
 
     ord      = 1                    # initial method order
     t        = [t_start]            # initial time
@@ -48,11 +50,11 @@ function dasslSolve{T<:Real}(F             :: Function,
     # row.  Needed to make a decision
     # on the order of the next step
 
-    r   = one(T)
+    r   = one(h0)
 
     while t[end] < t_stop
 
-        epsilon = eps(one(T))
+        epsilon = eps(one(h0))
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
         if h < hmin
@@ -384,7 +386,8 @@ function stepper!(ord    :: Int,
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
     # causing trouble when dy0==0 (which happens for ord==1)
-    delta = max(abs(y0),abs(h_next*dy0),wt)*sqrt(eps(eltype(abs(y0))))
+    ep    = eps(one(eltype(abs(y0)))) # this is the machine epsilon
+    delta = max(abs(y0),abs(h_next*dy0),wt)*sqrt(ep)
 
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
@@ -496,7 +499,9 @@ function newton_iteration(f  :: Function,
     # after the first iteration the norm turned out to be very small,
     # terminate and return the first correction step
 
-    if norm1 < 10*eps(eltype(abs(y0)))
+    ep    = eps(one(eltype(abs(y0)))) # this is the epsilon for type y0
+
+    if norm1 < 10*ep
         status=0
         return(status,yn)
     end
