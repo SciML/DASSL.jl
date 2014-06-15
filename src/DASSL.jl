@@ -8,7 +8,7 @@ const MAXORDER = 6
 
 type StepperStuff
     a     :: Real
-    g     :: Matrix
+    g
 end
 
 function dasslSolve{T<:Real}(F             :: Function,
@@ -23,7 +23,11 @@ function dasslSolve{T<:Real}(F             :: Function,
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
-    g = zeros(eltype(y0),length(y0),length(y0))
+    if typeof(y0) == Number
+        g = zero(y0)
+    else
+        g = zeros(eltype(y0),length(y0),length(y0))
+    end
     # The parameter a has to be kept between consecutive calls of
     # stepper!
     a = zero(T)
@@ -35,7 +39,8 @@ function dasslSolve{T<:Real}(F             :: Function,
     ord      = 1                    # initial method order
     t        = [t_start]            # initial time
     h        = h0                   # current step size
-    y        = hcat(y0)             # initial data
+    yout     = Array(typeof(y0),1)
+    yout[1]  = y0
     num_rejected = 0                # number of rejected steps
     num_fail = 0                    # number of consecutive failures
     nfixed   = 1                    # number of steps with fixed order
@@ -57,13 +62,13 @@ function dasslSolve{T<:Real}(F             :: Function,
         end
 
         # weights for the norm
-        wt = rtol*abs(y[:,end]).+atol
+        wt = rtol*abs(yout[end]).+atol
 
         # norm used to determine the local error of the numerical
         # solution
         dnorm(v)=norm(v./wt)/sqrt(length(v))
 
-        (status,err,yn)=stepper!(ord,t,y,h,F,stuff,wt)
+        (status,err,yn)=stepper!(ord,t,yout,h,F,stuff,wt)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -86,7 +91,7 @@ function dasslSolve{T<:Real}(F             :: Function,
             # keep track of the total number of rejected steps
             num_rejected += 1
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([t, t[end]+h],y,dnorm,ord,num_fail,nfixed,err)
+            (r,ord) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err)
             h *= r
             continue
 
@@ -100,9 +105,9 @@ function dasslSolve{T<:Real}(F             :: Function,
 
             # save the results
             push!(t,t[end]+h)
-            y    = [y   yn]
+            push!(yout,yn)
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([t, t[end]+h],y,dnorm,ord,num_fail,nfixed,err)
+            (r_new,ord_new) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err)
 
             if ord_new == ord && r_new == r
                 nfixed += 1
@@ -119,20 +124,20 @@ function dasslSolve{T<:Real}(F             :: Function,
 
     end
 
-    return(t,y,num_rejected)
+    return(t,yout,num_rejected)
 
 end
 
 
-function newStepOrder{T<:Real}(t         :: Vector{T},
-                               y         :: Matrix,
-                               dnorm     :: Function,
-                               k         :: Int,
-                               num_fail  :: Int,
-                               nfixed    :: Int,
-                               erk       :: T)
+function newStepOrder(t         :: Vector,
+                      y         :: Vector,
+                      dnorm     :: Function,
+                      k         :: Int,
+                      num_fail  :: Int,
+                      nfixed    :: Int,
+                      erk       :: Real)
 
-    if length(t) != size(y,2)+1
+    if length(t) != length(y)+1
         error("incompatible size of y and t")
     end
 
@@ -178,12 +183,12 @@ function newStepOrder{T<:Real}(t         :: Vector{T},
 end
 
 
-function newStepOrderContinuous{T<:Real}(t      :: Vector{T},
-                                         y      :: Matrix,
-                                         dnorm  :: Function,
-                                         k      :: Int,
-                                         nfixed :: Int,
-                                         erk    :: T)
+function newStepOrderContinuous(t      :: Vector,
+                                y      :: Vector,
+                                dnorm  :: Function,
+                                k      :: Int,
+                                nfixed :: Int,
+                                erk    :: Real)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
@@ -273,33 +278,33 @@ end
 
 # here t is an array of times    [t_1, ..., t_n, t_{n+1}]
 # and y is an array of solutions [y_1, ..., y_n]
-function errorEstimates{T<:Real}(t      :: Vector{T},
-                                 y      :: Matrix,
-                                 dnorm  :: Function,
-                                 k      :: Int,
-                                 nfixed :: Int)
+function errorEstimates(t      :: Vector,
+                        y      :: Vector,
+                        dnorm  :: Function,
+                        k      :: Int,
+                        nfixed :: Int)
 
     h = diff(t)
 
-    l = size(y,1)
+    l = length(y[1])
 
     psi    = cumsum(reverse(h[end-k-1:end]))
 
     # @todo there is no need to allocate array of size 1:k+3, we only
     # need a four element array k:k+3
-    phi    = zeros(eltype(y),l,k+3)
+    phi    = zeros(eltype(y[1]),l,k+3)
     # fill in all but a last (k+3)-rd row of phi
     for i = k:k+2
-        phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[:,end-i+1:end])
+        phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[end-i+1:end])
     end
 
-    sigma  = zeros(T,k+2)
+    sigma  = zeros(eltype(t),k+2)
     sigma[1] = 1
     for i = 2:k+2
         sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
     end
 
-    errors    = zeros(T,MAXORDER)
+    errors    = zeros(eltype(t),MAXORDER)
     errors[k] = sigma[k+1]*dnorm(phi[:,k+2])
 
     if k >= 2
@@ -316,7 +321,7 @@ function errorEstimates{T<:Real}(t      :: Vector{T},
         # error estimate for order k+1
         # fill in the rest of the phi array (the (k+3)-rd row)
         for i = k+3:k+3
-            phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[:,end-i+1:end])
+            phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[end-i+1:end])
         end
 
         # estimate for the order k+1
@@ -335,25 +340,25 @@ end
 # F encodes the DAE: F(y,y',t)=0
 # stuff is a bunch of auxilary data saved between steps
 # wt is a vector of weights of the norm
-function stepper!{T<:Real}(ord    :: Int,
-                           t      :: Vector{T},
-                           y      :: Matrix,
-                           h_next :: T,
-                           F      :: Function,
-                           stuff  :: StepperStuff,
-                           wt     :: Vector{T})
+function stepper!(ord    :: Int,
+                  t      :: Vector,
+                  y      :: Vector,
+                  h_next :: Real,
+                  F      :: Function,
+                  stuff  :: StepperStuff,
+                  wt)
 
-    l        = size(y,1)        # the number of dependent variables
+    l        = length(y[1])        # the number of dependent variables
 
     # sanity check
     # @todo remove it in final version
-    if length(t) < ord || size(y,2) < ord
+    if length(t) < ord || length(y) < ord
         error("Not enough points in a grid to use method of order $ord")
     end
 
     # @todo this should be the view of the tail of the arrays t and y
     tk = t[end-ord+1:end]
-    yk = y[:,end-ord+1:end]
+    yk = y[end-ord+1:end]
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
@@ -379,7 +384,7 @@ function stepper!{T<:Real}(ord    :: Int,
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
     # causing trouble when dy0==0 (which happens for ord==1)
-    delta = max(abs(y0),abs(h_next*dy0),wt)*sqrt(eps(T))
+    delta = max(abs(y0),abs(h_next*dy0),wt)*sqrt(eps(eltype(abs(y0))))
 
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
@@ -401,7 +406,7 @@ function stepper!{T<:Real}(ord    :: Int,
                           f_newton, # we want to find zeroes of this function
                           wt)       # the norm used to estimate error needs weights
 
-    alpha = Array(T,ord+1)
+    alpha = Array(eltype(t),ord+1)
 
     for i = 1:ord
         alpha[i] = h_next/(t_next-t[end-i+1])
@@ -423,6 +428,7 @@ function stepper!{T<:Real}(ord    :: Int,
     M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
     err    =  dassl_norm((yc-y0),wt)*M
 
+
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
     # yc is the estimated value at the next step
@@ -434,12 +440,12 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T<:Real}(stuff    :: StepperStuff,
-                            a_new    :: T,
-                            g_new    :: Function,
-                            y0,
-                            f_newton :: Function,
-                            wt       :: Vector{T})
+function corrector(stuff    :: StepperStuff,
+                   a_new    :: Real,
+                   g_new    :: Function,
+                   y0,
+                   f_newton :: Function,
+                   wt)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -476,9 +482,9 @@ end
 # from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration{T<:Real}(f  :: Function,
-                                   y0,
-                                   wt :: Vector{T})
+function newton_iteration(f  :: Function,
+                          y0,
+                          wt)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -490,7 +496,7 @@ function newton_iteration{T<:Real}(f  :: Function,
     # after the first iteration the norm turned out to be very small,
     # terminate and return the first correction step
 
-    if norm1 < 10*eps(T)
+    if norm1 < 10*eps(eltype(abs(y0)))
         status=0
         return(status,yn)
     end
@@ -529,15 +535,25 @@ function newton_iteration{T<:Real}(f  :: Function,
 end
 
 
-function dassl_norm{T<:Real}(v, wt :: Vector{T})
+function dassl_norm(v, wt)
     norm(v./wt)/sqrt(length(v))
 end
 
+
 # compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
 # @todo replace with symmetric finite difference?
-function G{T<:Real}(f     :: Function,
-                    y0,
-                    delta :: Vector{T})
+
+# Number version
+function G(f     :: Function,
+           y0    :: Number,
+           delta :: Number)
+    return (f(y0+delta)-f(y0))/delta
+end
+
+# Vector version
+function G(f     :: Function,
+           y0    :: Vector,
+           delta :: Vector)
     n=length(y0)
     edelta=diagm(delta)
     s=Array(eltype(y0),n,n)
@@ -549,15 +565,15 @@ end
 
 # returns the value of the interpolation polynomial at the point x0
 function interpolateAt{T<:Real}(x::Vector{T},
-                                y::Matrix,
+                                y::Vector,
                                 x0::T)
 
-    if length(x)!=size(y,ndims(y))
+    if length(x)!=length(y)
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zeros(eltype(y),size(y,1))
+    p = zero(y[1])
 
     for i=1:n
         Li =one(T)
@@ -568,7 +584,7 @@ function interpolateAt{T<:Real}(x::Vector{T},
                 Li*=(x0-x[j])/(x[i]-x[j])
             end
         end
-        p+=Li*y[:,i]
+        p+=Li*y[i]
     end
     return p
 end
@@ -577,15 +593,15 @@ end
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
 function interpolateDerivativeAt{T<:Real}(x::Vector{T},
-                                          y::Matrix,
+                                          y::Vector,
                                           x0::T)
 
-    if length(x)!=size(y,ndims(y))
+    if length(x)!=length(y)
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zeros(eltype(y),size(y,1))
+    p = zero(y[1])
 
     for i=1:n
         dLi=zero(T)
@@ -604,7 +620,7 @@ function interpolateDerivativeAt{T<:Real}(x::Vector{T},
                 dLi+=dLi1/(x[i]-x[k])
             end
         end
-        p+=dLi*y[:,i]
+        p+=dLi*y[i]
     end
     return p
 end
@@ -613,19 +629,18 @@ end
 # if the interpolating polynomial is given as
 # p(x)=a_{k-1}*x^{k-1}+...a_1*x+a_0 then this function returns the
 # k-th derivative of p, i.e. (k-1)!*a_{k-1}
-function interpolateHighestDerivative{T<:Real}(x::Vector{T},
-                                               y::Matrix)
+function interpolateHighestDerivative(x::Vector,
+                                      y::Vector)
 
-    if length(x)!=size(y,ndims(y))
+    if length(x)!=length(y)
         error("x and y have to be of the same size.")
     end
 
     n = length(x)
-    p = zeros(eltype(y),size(y,1))
-    Li =one(T)
+    p = zero(y[1])
 
     for i=1:n
-        Li =one(T)
+        Li =one(eltype(x))
         for j=1:n
             if j==i
                 continue
@@ -633,7 +648,7 @@ function interpolateHighestDerivative{T<:Real}(x::Vector{T},
                 Li*=1/(x[i]-x[j])
             end
         end
-        p+=Li*y[:,i]
+        p+=Li*y[i]
     end
     return p
 end
