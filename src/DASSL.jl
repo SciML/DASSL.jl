@@ -380,7 +380,7 @@ function stepper!{T<:Real,Ty<:Number}(ord    :: Int,
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
     # causing trouble when dy0==0 (which happens for ord==1)
-    delta = jac_delta(y0,dy0,h_next,wt)
+    delta = max(abs(y0),abs(h_next*dy0),wt)*sqrt(eps(T))
 
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
@@ -548,17 +548,6 @@ function G{T<:Real,Ty<:Number}(f     :: Function,
     end
     return(s)
 end
-
-
-function jac_delta{T<:Real,Ty<:Number}(y0     :: Vector{Ty},
-                                       dy0    :: Vector{Ty},
-                                       h_next :: T,
-                                       wt     :: Vector{T})
-    d = [ max(abs(y0[j]),abs(h_next*dy0[j]),wt[j]) for j=1:length(y0)]
-    d*= sqrt(eps(T))
-    return d
-end
-
 
 # returns the value of the interpolation polynomial at the point x0
 function interpolateAt{T<:Real,Ty<:Number}(x::Vector{T},
