@@ -15,7 +15,7 @@ Pkg.add("DASSL")
 Examples
 --------
 
-To solve a scalar equation `y'(t)=y(t)` with initial data `y(0)=0.0` up to time `t=10.0` run the following code
+To solve a scalar equation `y'(t)+y(t)=0` with initial data `y(0)=0.0` up to time `t=10.0` run the following code
 
 ```
 using DASSL
