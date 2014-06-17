@@ -58,9 +58,11 @@ function dasslSolve(F             :: Function,
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
 
         if h < hmin
-            error("Stepsize too small (h=$h at t=$(t[end]).")
+            warn("Stepsize too small (h=$h at t=$(t[end]).")
+            break
         elseif num_fail >= 10
-            error("Too many failed steps in a row (h=$h at t=$(t[end]).")
+            warn("Too many failed steps in a row (h=$h at t=$(t[end]).")
+            break
         end
 
         # weights for the norm
