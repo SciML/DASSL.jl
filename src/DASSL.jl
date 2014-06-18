@@ -16,7 +16,9 @@ function dasslSolve(F             :: Function,
                     tspan         :: Vector;
                     rtol = 1.0e-3,
                     atol = 1.0e-5,
-                    h0   = 1.0e-4)
+                    h0   = 1.0e-4,
+                    hmax = 1,
+                    maxorder = MAXORDER)
 
     t_start = tspan[1]
     t_stop  = tspan[end]
@@ -43,6 +45,8 @@ function dasslSolve(F             :: Function,
     h        = h0                   # current step size
     yout     = Array(typeof(y0),1)
     yout[1]  = y0
+    dyout    = Array(typeof(y0),1)
+    dyout[1] = zero(y0)
     num_rejected = 0                # number of rejected steps
     num_fail = 0                    # number of consecutive failures
     nfixed   = 1                    # number of steps with fixed order
@@ -56,6 +60,8 @@ function dasslSolve(F             :: Function,
 
         epsilon = eps(one(h0))
         hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
+
+        h = min(h,hmax)
 
         if h < hmin
             warn("Stepsize too small (h=$h at t=$(t[end]).")
@@ -72,7 +78,7 @@ function dasslSolve(F             :: Function,
         # solution
         dnorm(v)=norm(v./wt)/sqrt(length(v))
 
-        (status,err,yn)=stepper!(ord,t,yout,h,F,stuff,wt)
+        (status,err,yn,dyn)=stepper!(ord,t,yout,h,F,stuff,wt)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -110,6 +116,7 @@ function dasslSolve(F             :: Function,
             # save the results
             push!(t,t[end]+h)
             push!(yout,yn)
+            push!(dyout,dyn)
             # determine the new step size and order, including the current step
             (r_new,ord_new) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err)
 
@@ -128,7 +135,7 @@ function dasslSolve(F             :: Function,
 
     end
 
-    return(t,yout,num_rejected)
+    return(t,yout,dyout,num_rejected)
 
 end
 
@@ -437,7 +444,7 @@ function stepper!(ord    :: Int,
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
     # yc is the estimated value at the next step
-    return (status, err, yc)
+    return (status, err, yc, a*yc+b)
 
 end
 
