@@ -1,5 +1,3 @@
-# @todo changing MAXORDER to 3 results in BoundsError()
-
 module DASSL
 
 export dasslSolve
@@ -78,7 +76,7 @@ function dasslSolve(F             :: Function,
         # solution
         dnorm(v)=norm(v./wt)/sqrt(length(v))
 
-        (status,err,yn,dyn)=stepper!(ord,t,yout,h,F,stuff,wt)
+        (status,err,yn,dyn)=stepper!(ord,t,yout,h,F,stuff,wt,maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -101,7 +99,7 @@ function dasslSolve(F             :: Function,
             # keep track of the total number of rejected steps
             num_rejected += 1
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err)
+            (r,ord) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
             h *= r
             continue
 
@@ -118,7 +116,7 @@ function dasslSolve(F             :: Function,
             push!(yout,yn)
             push!(dyout,dyn)
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err)
+            (r_new,ord_new) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
 
             if ord_new == ord && r_new == r
                 nfixed += 1
@@ -146,7 +144,8 @@ function newStepOrder(t         :: Vector,
                       k         :: Int,
                       num_fail  :: Int,
                       nfixed    :: Int,
-                      erk       :: Real)
+                      erk       :: Real,
+                      maxorder  :: Int)
 
     if length(t) != length(y)+1
         error("incompatible size of y and t")
@@ -167,7 +166,7 @@ function newStepOrder(t         :: Vector,
         if num_fail == 0
             # previous step was accepted so we can increase the order
             # and the step size
-            (r,order) = (2,min(k+1,MAXORDER))
+            (r,order) = (2,min(k+1,maxorder))
         else
             # @todo I am not sure about the choice of order
             #
@@ -179,7 +178,7 @@ function newStepOrder(t         :: Vector,
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,dnorm,k,nfixed,erk)
+        (r,order) = newStepOrderContinuous(t,y,dnorm,k,nfixed,erk,maxorder)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
         # if the previous step failed don't increase the order
@@ -194,23 +193,27 @@ function newStepOrder(t         :: Vector,
 end
 
 
-function newStepOrderContinuous(t      :: Vector,
-                                y      :: Vector,
-                                dnorm  :: Function,
-                                k      :: Int,
-                                nfixed :: Int,
-                                erk    :: Real)
+function newStepOrderContinuous(t        :: Vector,
+                                y        :: Vector,
+                                dnorm    :: Function,
+                                k        :: Int,
+                                nfixed   :: Int,
+                                erk      :: Real,
+                                maxorder :: Int)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
-    errors  = errorEstimates(t,y,dnorm,k,nfixed)
+    errors  = errorEstimates(t,y,dnorm,k,nfixed,maxorder)
     errors[k] = erk
     # normalized errors, this is TERK from DASSL
-    nerrors = errors .* [2:MAXORDER+1]
+    nerrors = errors .* [2:maxorder+1]
 
     order = k
 
-    if k == 1
+    if k == maxorder
+        order = k
+
+    elseif k == 1
         if nerrors[k]/2 > nerrors[k+1]
             order = k+1
         end
@@ -220,8 +223,6 @@ function newStepOrderContinuous(t      :: Vector,
             order = k-1
         elseif k >= 3 && max(nerrors[k-1],nerrors[k-2]) <= nerrors[k]
             order = k-1
-        elseif k == MAXORDER
-            order = k
         elseif false
             # @todo don't increase order two times in a row
             order = k
@@ -289,11 +290,12 @@ end
 
 # here t is an array of times    [t_1, ..., t_n, t_{n+1}]
 # and y is an array of solutions [y_1, ..., y_n]
-function errorEstimates(t      :: Vector,
-                        y      :: Vector,
-                        dnorm  :: Function,
-                        k      :: Int,
-                        nfixed :: Int)
+function errorEstimates(t        :: Vector,
+                        y        :: Vector,
+                        dnorm    :: Function,
+                        k        :: Int,
+                        nfixed   :: Int,
+                        maxorder :: Int)
 
     h = diff(t)
 
@@ -315,7 +317,7 @@ function errorEstimates(t      :: Vector,
         sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
     end
 
-    errors    = zeros(eltype(t),MAXORDER)
+    errors    = zeros(eltype(t),maxorder)
     errors[k] = sigma[k+1]*dnorm(phi[:,k+2])
 
     if k >= 2
@@ -328,7 +330,7 @@ function errorEstimates(t      :: Vector,
         errors[k-2] = sigma[k-1]*dnorm(phi[:,k])
     end
 
-    if k <= 5 && nfixed >= k+1
+    if k+1 <= maxorder && nfixed >= k+1
         # error estimate for order k+1
         # fill in the rest of the phi array (the (k+3)-rd row)
         for i = k+3:k+3
@@ -351,13 +353,14 @@ end
 # F encodes the DAE: F(y,y',t)=0
 # stuff is a bunch of auxilary data saved between steps
 # wt is a vector of weights of the norm
-function stepper!(ord    :: Int,
-                  t      :: Vector,
-                  y      :: Vector,
-                  h_next :: Real,
-                  F      :: Function,
-                  stuff  :: StepperStuff,
-                  wt)
+function stepper!(ord      :: Int,
+                  t        :: Vector,
+                  y        :: Vector,
+                  h_next   :: Real,
+                  F        :: Function,
+                  stuff    :: StepperStuff,
+                  wt,
+                  maxorder :: Int)
 
     l        = length(y[1])        # the number of dependent variables
 
@@ -373,8 +376,8 @@ function stepper!(ord    :: Int,
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
-    if ord < 1 || ord > MAXORDER
-        error("Order ord=$(ord) should be [1,...,$MAXORDER]")
+    if ord < 1 || ord > maxorder
+        error("Order ord=$(ord) should be [1,...,$maxorder]")
         return(-1)
     end
 
