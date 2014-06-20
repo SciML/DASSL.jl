@@ -16,7 +16,8 @@ function dasslSolve(F             :: Function,
                     atol = 1.0e-5,
                     h0   = 1.0e-4,
                     hmax = 1,
-                    maxorder = MAXORDER)
+                    maxorder = MAXORDER,
+                    dy0  = zero(y0))
 
     t_start = tspan[1]
     t_stop  = tspan[end]
@@ -44,7 +45,7 @@ function dasslSolve(F             :: Function,
     yout     = Array(typeof(y0),1)
     yout[1]  = y0
     dyout    = Array(typeof(y0),1)
-    dyout[1] = zero(y0)
+    dyout[1] = dy0
     num_rejected = 0                # number of rejected steps
     num_fail = 0                    # number of consecutive failures
     nfixed   = 1                    # number of steps with fixed order
@@ -76,7 +77,7 @@ function dasslSolve(F             :: Function,
         # solution
         dnorm(v)=norm(v./wt)/sqrt(length(v))
 
-        (status,err,yn,dyn)=stepper!(ord,t,yout,h,F,stuff,wt,maxorder)
+        (status,err,yn,dyn)=stepper!(ord,t,yout,dyout,h,F,stuff,wt,maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -356,6 +357,7 @@ end
 function stepper!(ord      :: Int,
                   t        :: Vector,
                   y        :: Vector,
+                  dy       :: Vector,
                   h_next   :: Real,
                   F        :: Function,
                   stuff    :: StepperStuff,
@@ -383,10 +385,20 @@ function stepper!(ord      :: Int,
 
     t_next   = tk[end]+h_next
 
-    # we use predictor to obtain the starting point for the modified
-    # newton method
-    y0  = interpolateAt(tk,yk,t_next)
-    dy0 = interpolateDerivativeAt(tk,yk,t_next)
+    if length(y) == 1
+        # this is the first step, we initialize y0 and dy0 with
+        # initial data provided by user
+        dy0 = dy[1]
+        y0  = y[1]+h_next*dy[1]
+    else
+        # we use predictor to obtain the starting point for the
+        # modified newton method
+        #
+        # @todo I should optimize the following functions to return a
+        # tuple (y0,dy0)
+        dy0 = interpolateDerivativeAt(tk,yk,t_next)
+        y0  = interpolateAt(tk,yk,t_next)
+    end
 
     # I think there is an error in the book, the sum should be taken
     # from j=1 to k+1 instead of j=1 to k
