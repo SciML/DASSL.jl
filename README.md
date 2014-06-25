@@ -67,3 +67,24 @@ The solution can be computed by calling
 tspan   = [0.0,10.0]
 (tn,yn) = dasslSolve(F,y0,tspan)
 ```
+
+Iterator version
+----------------
+
+The newest version of DASSL.jl supports iterative version of solver
+(implemented via coroutines) via `dasslIterator`.  In the following
+example the `dasslIterator` is used to stop the integration when the
+solution `y` drops below `0.1`
+
+
+```
+F(t,y,dy)=dy+y
+
+# iterator version of dassl solver
+for (t,y,dy) in dasslIterator(F,1.0,0.0)
+    if y < 0.1
+        @show (t,y,dy)
+        break
+    end
+end
+```
