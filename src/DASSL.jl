@@ -1,6 +1,6 @@
 module DASSL
 
-export dasslSolve
+export dasslIterator, dasslSolve
 
 const MAXORDER = 6
 
@@ -9,18 +9,15 @@ type StepperStuff
     g
 end
 
-function dasslSolve(F             :: Function,
-                    y0,
-                    tspan         :: Vector;
-                    rtol = 1.0e-3,
-                    atol = 1.0e-5,
-                    h0   = 1.0e-4,
-                    hmax = 1,
-                    maxorder = MAXORDER,
-                    dy0  = zero(y0))
-
-    t_start = tspan[1]
-    t_stop  = tspan[end]
+function dasslStep(F             :: Function,
+                   y0,
+                   tstart;
+                   rtol = 1.0e-3,
+                   atol = 1.0e-5,
+                   h0   = 1.0e-4,
+                   hmax = 1,
+                   maxorder = MAXORDER,
+                   dy0  = zero(y0))
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
@@ -40,7 +37,7 @@ function dasslSolve(F             :: Function,
     wt = zero(abs(y0))
 
     ord      = 1                    # initial method order
-    t        = [t_start]            # initial time
+    tout     = [tstart]            # initial time
     h        = h0                   # current step size
     yout     = Array(typeof(y0),1)
     yout[1]  = y0
@@ -55,18 +52,16 @@ function dasslSolve(F             :: Function,
 
     r   = one(h0)
 
-    while t[end] < t_stop
+    while true
 
-        epsilon = eps(one(h0))
-        hmin = 4*epsilon*max(abs(t[end]),abs(t_stop))
-
+        hmin = 4*eps(tout[end])
         h = min(h,hmax)
 
         if h < hmin
-            warn("Stepsize too small (h=$h at t=$(t[end]).")
+            info("Stepsize too small (h=$h at t=$(tout[end]).")
             break
         elseif num_fail >= 10
-            warn("Too many failed steps in a row (h=$h at t=$(t[end]).")
+            info("Too many failed steps in a row (h=$h at t=$(tout[end]).")
             break
         end
 
@@ -77,7 +72,7 @@ function dasslSolve(F             :: Function,
         # solution
         dnorm(v)=norm(v./wt)/sqrt(length(v))
 
-        (status,err,yn,dyn)=stepper!(ord,t,yout,dyout,h,F,stuff,wt,maxorder)
+        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,stuff,wt,maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -100,7 +95,7 @@ function dasslSolve(F             :: Function,
             # keep track of the total number of rejected steps
             num_rejected += 1
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
+            (r,ord) = newStepOrder([tout, tout[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
             h *= r
             continue
 
@@ -113,11 +108,21 @@ function dasslSolve(F             :: Function,
             num_fail      = 0
 
             # save the results
-            push!(t,t[end]+h)
-            push!(yout,yn)
+            push!(tout, tout[end]+h)
+            push!(yout, yn)
             push!(dyout,dyn)
+
+            # remove old results
+            if length(tout) > maxorder+3
+                shift!(tout)
+                shift!(yout)
+                shift!(dyout)
+            end
+
+            produce(tout[end],yout[end],dyout[end])
+
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([t, t[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
+            (r_new,ord_new) = newStepOrder([tout, tout[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
 
             if ord_new == ord && r_new == r
                 nfixed += 1
@@ -134,10 +139,29 @@ function dasslSolve(F             :: Function,
 
     end
 
-    return(t,yout,dyout,num_rejected)
-
 end
 
+# the iterator version of the dasslSolve
+dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
+
+# solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
+function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
+    tout  = Array(typeof(tspan[1]),1)
+    yout  = Array(typeof(y0),1)
+    dyout = Array(typeof(y0),1)
+    tout[1]  = tspan[1]
+    yout[1]  = y0
+    dyout[1] = dy0
+    for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0=dy0, args...)
+        push!( tout,  t)
+        push!( yout,  y)
+        push!(dyout, dy)
+        if t >= tspan[end]
+            break
+        end
+    end
+    return (tout,yout,dyout)
+end
 
 function newStepOrder(t         :: Vector,
                       y         :: Vector,

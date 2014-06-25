@@ -12,17 +12,19 @@ rtol = 1.0e-3
 # test the maxorder option
 for order=1:6
     # scalar version
-    (tn,yn)=DASSL.dasslSolve(F, sol(0.0), tspan, maxorder = order)
+    (tn,yn,dyn)=DASSL.dasslSolve(F, sol(0.0), tspan, maxorder = order)
     aerror = maximum(abs(yn-sol(tn)))
     rerror = maximum(abs(yn-sol(tn))/abs(sol(tn)))
+    nsteps = length(tn)
 
-    @test aerror < 10*atol
-    @test rerror < 10*rtol
+    @test aerror < nsteps*atol
+    @test rerror < nsteps*rtol
 
     # vector version
-    (tnV,ynV)=DASSL.dasslSolve(F,[sol(0.0)], tspan, maxorder = order)
+    (tnV,ynV,dynV)=DASSL.dasslSolve(F,[sol(0.0)], tspan, maxorder = order)
 
-    @test vcat(ynV...)==yn
+    @test  vcat(ynV...)==yn
+    @test vcat(dynV...)==dyn
 end
 
 # test the initial derivatives y0 using the van der Pol equation
