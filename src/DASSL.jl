@@ -4,20 +4,24 @@ export dasslIterator, dasslSolve
 
 const MAXORDER = 6
 
-type StepperStuff
-    a     :: Real
-    g
+type PreviousJacobian
+    a :: Real
+    G         # Jacobian matrix for the newton solver
 end
 
 function dasslStep(F             :: Function,
                    y0,
                    tstart;
-                   rtol = 1.0e-3,
-                   atol = 1.0e-5,
-                   h0   = 1.0e-4,
-                   hmax = 1,
+                   reltol   = 1.0e-3,
+                   abstol   = 1.0e-5,
+                   initstep = 1.0e-4,
+                   maxstep  = Inf,
+                   minstep  = 0,
                    maxorder = MAXORDER,
-                   dy0  = zero(y0))
+                   dy0      = zero(y0),
+                   tstop    = Inf,
+                   norm     = dassl_norm,
+                   weights  = dassl_weights)
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
@@ -30,15 +34,13 @@ function dasslStep(F             :: Function,
     end
     # The parameter a has to be kept between consecutive calls of
     # stepper!
-    a = zero(h0)
+    a = zero(initstep)
     # zip the stepper temporary variables in a type
-    stuff = StepperStuff(a,g)
-
-    wt = zero(abs(y0))
+    prevJac = PreviousJacobian(a,g)
 
     ord      = 1                    # initial method order
     tout     = [tstart]            # initial time
-    h        = h0                   # current step size
+    h        = initstep                   # current step size
     yout     = Array(typeof(y0),1)
     yout[1]  = y0
     dyout    = Array(typeof(y0),1)
@@ -50,12 +52,12 @@ function dasslStep(F             :: Function,
     # row.  Needed to make a decision
     # on the order of the next step
 
-    r   = one(h0)
+    r   = one(initstep)
 
-    while true
+    while tout[end] < tstop
 
-        hmin = 4*eps(tout[end])
-        h = min(h,hmax)
+        hmin = max(4*eps(tout[end]),minstep)
+        h = min(h,maxstep,tstop-tout[end])
 
         if h < hmin
             info("Stepsize too small (h=$h at t=$(tout[end]).")
@@ -65,14 +67,11 @@ function dasslStep(F             :: Function,
             break
         end
 
-        # weights for the norm
-        wt = rtol*abs(yout[end]).+atol
+        # error weights
+        wt = weights(yout[end],reltol,abstol)
+        normy(v) = norm(v,wt)
 
-        # norm used to determine the local error of the numerical
-        # solution
-        dnorm(v)=norm(v./wt)/sqrt(length(v))
-
-        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,stuff,wt,maxorder)
+        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,prevJac,wt,normy,maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -95,7 +94,7 @@ function dasslStep(F             :: Function,
             # keep track of the total number of rejected steps
             num_rejected += 1
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([tout, tout[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
+            (r,ord) = newStepOrder([tout, tout[end]+h],yout,normy,ord,num_fail,nfixed,err,maxorder)
             h *= r
             continue
 
@@ -122,7 +121,7 @@ function dasslStep(F             :: Function,
             produce(tout[end],yout[end],dyout[end])
 
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([tout, tout[end]+h],yout,dnorm,ord,num_fail,nfixed,err,maxorder)
+            (r_new,ord_new) = newStepOrder([tout, tout[end]+h],yout,normy,ord,num_fail,nfixed,err,maxorder)
 
             if ord_new == ord && r_new == r
                 nfixed += 1
@@ -141,8 +140,10 @@ function dasslStep(F             :: Function,
 
 end
 
+
 # the iterator version of the dasslSolve
 dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
+
 
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
 function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
@@ -152,7 +153,7 @@ function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
     tout[1]  = tspan[1]
     yout[1]  = y0
     dyout[1] = dy0
-    for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0=dy0, args...)
+    for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0=dy0, tstop=tspan[end], args...)
         push!( tout,  t)
         push!( yout,  y)
         push!(dyout, dy)
@@ -163,9 +164,10 @@ function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
     return (tout,yout,dyout)
 end
 
+
 function newStepOrder(t         :: Vector,
                       y         :: Vector,
-                      dnorm     :: Function,
+                      normy     :: Function,
                       k         :: Int,
                       num_fail  :: Int,
                       nfixed    :: Int,
@@ -203,7 +205,7 @@ function newStepOrder(t         :: Vector,
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,dnorm,k,nfixed,erk,maxorder)
+        (r,order) = newStepOrderContinuous(t,y,normy,k,nfixed,erk,maxorder)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
         # if the previous step failed don't increase the order
@@ -220,7 +222,7 @@ end
 
 function newStepOrderContinuous(t        :: Vector,
                                 y        :: Vector,
-                                dnorm    :: Function,
+                                normy    :: Function,
                                 k        :: Int,
                                 nfixed   :: Int,
                                 erk      :: Real,
@@ -228,7 +230,7 @@ function newStepOrderContinuous(t        :: Vector,
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
-    errors  = errorEstimates(t,y,dnorm,k,nfixed,maxorder)
+    errors  = errorEstimates(t,y,normy,k,nfixed,maxorder)
     errors[k] = erk
     # normalized errors, this is TERK from DASSL
     nerrors = errors .* [2:maxorder+1]
@@ -317,7 +319,7 @@ end
 # and y is an array of solutions [y_1, ..., y_n]
 function errorEstimates(t        :: Vector,
                         y        :: Vector,
-                        dnorm    :: Function,
+                        normy    :: Function,
                         k        :: Int,
                         nfixed   :: Int,
                         maxorder :: Int)
@@ -343,16 +345,16 @@ function errorEstimates(t        :: Vector,
     end
 
     errors    = zeros(eltype(t),maxorder)
-    errors[k] = sigma[k+1]*dnorm(phi[:,k+2])
+    errors[k] = sigma[k+1]*normy(phi[:,k+2])
 
     if k >= 2
         # error estimate for order k-1
-        errors[k-1] = sigma[k]*dnorm(phi[:,k+1])
+        errors[k-1] = sigma[k]*normy(phi[:,k+1])
     end
 
     if k >= 3
         # error estimate for order k-2
-        errors[k-2] = sigma[k-1]*dnorm(phi[:,k])
+        errors[k-2] = sigma[k-1]*normy(phi[:,k])
     end
 
     if k+1 <= maxorder && nfixed >= k+1
@@ -363,7 +365,7 @@ function errorEstimates(t        :: Vector,
         end
 
         # estimate for the order k+1
-        errors[k+1] = dnorm(phi[:,k+3])
+        errors[k+1] = normy(phi[:,k+3])
     end
 
     # return error estimates (this is ERK{M2,M1,,P1} from DASSL)
@@ -376,7 +378,7 @@ end
 # y is a matrix [y_1,...,y_n] of size k x l
 # h_next is a size of next step
 # F encodes the DAE: F(y,y',t)=0
-# stuff is a bunch of auxilary data saved between steps
+# prevJac is a bunch of auxilary data saved between steps
 # wt is a vector of weights of the norm
 function stepper!(ord      :: Int,
                   t        :: Vector,
@@ -384,8 +386,9 @@ function stepper!(ord      :: Int,
                   dy       :: Vector,
                   h_next   :: Real,
                   F        :: Function,
-                  stuff    :: StepperStuff,
+                  prevJac    :: PreviousJacobian,
                   wt,
+                  norm     :: Function,
                   maxorder :: Int)
 
     l        = length(y[1])        # the number of dependent variables
@@ -446,16 +449,16 @@ function stepper!(ord      :: Int,
     g_new()=G(f_newton,y0,delta)
 
     # this is the updated value of coefficient a, if jacobian is
-    # udpated, corrector will replace stuff.a with a_new
+    # udpated, corrector will replace prevJac.a with a_new
     a_new=a
 
     # we compute the corrected value "yc", updating the gradient if necessary
-    (status,yc)=corrector(stuff,    # old coefficient a and jacobian
+    (status,yc)=corrector(prevJac,  # old coefficient a and jacobian
                           a_new,    # current coefficient a
                           g_new,    # this function is called when new jacobian is needed
                           y0,       # starting point for modified newton
                           f_newton, # we want to find zeroes of this function
-                          wt)       # the norm used to estimate error needs weights
+                          norm)     # the norm used to estimate error needs weights
 
     alpha = Array(eltype(t),ord+1)
 
@@ -477,7 +480,7 @@ function stepper!(ord      :: Int,
 
     alpha0 = -sum(alpha[1:ord])
     M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
-    err    =  dassl_norm((yc-y0),wt)*M
+    err    =  norm((yc-y0))*M
 
 
     # status<0 means the modified Newton method did not converge
@@ -491,36 +494,36 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector(stuff    :: StepperStuff,
+function corrector(prevJac  :: PreviousJacobian,
                    a_new    :: Real,
                    g_new    :: Function,
                    y0,
                    f_newton :: Function,
-                   wt)
+                   norm     :: Function)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
-    if abs((stuff.a-a_new)/(stuff.a+a_new)) > 1/4
+    if abs((prevJac.a-a_new)/(prevJac.a+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
-        stuff.g=g_new()
-        stuff.a=a_new
+        prevJac.G=g_new()
+        prevJac.a=a_new
         # run the corrector
-        (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, wt)
+        (status,yc)=newton_iteration( x->(-prevJac.G\f_newton(x)), y0, norm)
     else
         # old jacobian should give reasonable convergence
-        c=2*stuff.a/(a_new+stuff.a)     # factor "c" is used to speed up
+        c=2*prevJac.a/(a_new+prevJac.a)     # factor "c" is used to speed up
         # the convergence when using an
         # old jacobian
         # reusing the old jacobian
-        (status,yc)=newton_iteration( x->(-c*(stuff.g\f_newton(x))), y0, wt)
+        (status,yc)=newton_iteration( x->(-c*(prevJac.G\f_newton(x))), y0, norm)
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
-            stuff.g=g_new()
-            stuff.a=a_new
+            prevJac.G=g_new()
+            prevJac.a=a_new
             # run the corrector again
-            (status,yc)=newton_iteration( x->(-stuff.g\f_newton(x)), y0, wt)
+            (status,yc)=newton_iteration( x->(-prevJac.G\f_newton(x)), y0, norm)
         end
     end
 
@@ -533,15 +536,15 @@ end
 # from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration(f  :: Function,
+function newton_iteration(f    :: Function,
                           y0,
-                          wt)
+                          norm :: Function)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
 
     delta=f(y0)
-    norm1=dassl_norm(delta,wt)
+    norm1=norm(delta)
     yn=y0+delta
 
     # after the first iteration the norm turned out to be very small,
@@ -559,7 +562,7 @@ function newton_iteration(f  :: Function,
     for i=1:3
 
         delta=f(yn)
-        normn=dassl_norm(delta,wt)
+        normn=norm(delta)
         rho=(normn/norm1)^(1/i)
         yn=yn+delta
 
@@ -590,6 +593,10 @@ end
 
 function dassl_norm(v, wt)
     norm(v./wt)/sqrt(length(v))
+end
+
+function dassl_weights(y,reltol,abstol)
+    reltol*abs(y).+abstol
 end
 
 
