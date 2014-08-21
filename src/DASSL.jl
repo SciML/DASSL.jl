@@ -12,9 +12,9 @@ end
 function dasslStep(F             :: Function,
                    y0,
                    tstart;
-                   reltol   = 1.0e-3,
-                   abstol   = 1.0e-5,
-                   initstep = 1.0e-4,
+                   reltol   = 1//10^3,
+                   abstol   = 1//10^5,
+                   initstep = 1//10^4,
                    maxstep  = Inf,
                    minstep  = 0,
                    maxorder = MAXORDER,
@@ -26,6 +26,12 @@ function dasslStep(F             :: Function,
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
+    T = eltype(y0)
+
+    if( typeof(tstart) != T)
+        error("Incompatible types of tstart y0")
+    end
+
     if typeof(y0) <: Number
         g = zero(y0)
     elseif typeof(y0) <: Vector
@@ -57,14 +63,14 @@ function dasslStep(F             :: Function,
 
     while tout[end] < tstop
 
-        hmin = max(4*eps(tout[end]),minstep)
+        hmin = max(4*eps(T),minstep)
         h = min(h,maxstep,tstop-tout[end])
 
         if h < hmin
             info("Stepsize too small (h=$h at t=$(tout[end]).")
             break
-        elseif num_fail >= 10
-            info("Too many failed steps in a row (h=$h at t=$(tout[end]).")
+        elseif num_fail >= -2/3*log(eps(T))
+            info("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]).")
             break
         end
 
@@ -86,7 +92,7 @@ function dasslStep(F             :: Function,
             h *= 1/4
             continue
 
-        elseif err > 1.0
+        elseif err > 1
             # local error is too large.  Step is rejected, and we try
             # again with new step size and order.
 
