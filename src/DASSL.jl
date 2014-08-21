@@ -21,7 +21,8 @@ function dasslStep(F             :: Function,
                    dy0      = zero(y0),
                    tstop    = Inf,
                    norm     = dassl_norm,
-                   weights  = dassl_weights)
+                   weights  = dassl_weights,
+                   args...)
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
     # with a and b defined in the stepper!
