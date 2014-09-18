@@ -9,6 +9,9 @@ type PreviousJacobian
     G         # Jacobian matrix for the newton solver
 end
 
+# there is no factorize for scalars
+Base.factorize(x::Number) = x
+
 function dasslStep(F             :: Function,
                    y0,
                    tstart;
@@ -22,6 +25,7 @@ function dasslStep(F             :: Function,
                    tstop    = Inf,
                    norm     = dassl_norm,
                    weights  = dassl_weights,
+                   factorizeJacobian = true, # whether to store factorized version of jacobian
                    args...)
 
     # we allocate the space for Jacobian of a function F(t,y,a*y+b)
@@ -78,7 +82,7 @@ function dasslStep(F             :: Function,
         wt = weights(yout[end],reltol,abstol)
         normy(v) = norm(v,wt)
 
-        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,prevJac,wt,normy,maxorder)
+        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,prevJac,wt,normy,maxorder,factorizeJacobian)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -396,7 +400,8 @@ function stepper!(ord      :: Int,
                   prevJac    :: PreviousJacobian,
                   wt,
                   norm     :: Function,
-                  maxorder :: Int)
+                  maxorder :: Int,
+                  factorizeJacobian :: Bool)
 
     l        = length(y[1])        # the number of dependent variables
 
@@ -465,7 +470,8 @@ function stepper!(ord      :: Int,
                           g_new,    # this function is called when new jacobian is needed
                           y0,       # starting point for modified newton
                           f_newton, # we want to find zeroes of this function
-                          norm)     # the norm used to estimate error needs weights
+                          norm,     # the norm used to estimate error needs weights
+                          factorizeJacobian)
 
     alpha = Array(eltype(t),ord+1)
 
@@ -506,7 +512,8 @@ function corrector(prevJac  :: PreviousJacobian,
                    g_new    :: Function,
                    y0,
                    f_newton :: Function,
-                   norm     :: Function)
+                   norm     :: Function,
+                   factorizeJacobian :: Bool)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -514,9 +521,12 @@ function corrector(prevJac  :: PreviousJacobian,
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
         prevJac.G=g_new()
+        if factorizeJacobian
+            prevJac.G=Base.factorize(prevJac.G)
+        end
         prevJac.a=a_new
         # run the corrector
-        (status,yc)=newton_iteration( x->(-prevJac.G\f_newton(x)), y0, norm)
+        (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
     else
         # old jacobian should give reasonable convergence
         c=2*prevJac.a/(a_new+prevJac.a)     # factor "c" is used to speed up
@@ -528,9 +538,12 @@ function corrector(prevJac  :: PreviousJacobian,
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
             prevJac.G=g_new()
+            if factorizeJacobian
+                prevJac.G=Base.factorize(prevJac.G)
+            end
             prevJac.a=a_new
             # run the corrector again
-            (status,yc)=newton_iteration( x->(-prevJac.G\f_newton(x)), y0, norm)
+            (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
         end
     end
 

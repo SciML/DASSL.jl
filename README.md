@@ -88,3 +88,10 @@ for (t,y,dy) in dasslIterator(F,1.0,0.0)
     end
 end
 ```
+
+Performance
+-----------
+
+I added an option `factorizeJacobian` (defaults to `true`), which
+forces the factorization of Jacobian before storing it.  It
+dramatically increases performance for large systems.
