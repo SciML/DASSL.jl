@@ -1,98 +1,139 @@
 module DASSL
 
+include("counters.jl")
+
+import Base: start, next, done
+
 export dasslIterator, dasslSolve
+
+# there is no factorize for scalars in Base
+Base.factorize(x::Number) = x
+
 
 const MAXORDER = 6
 
-type PreviousJacobian
-    a :: Real
-    G         # Jacobian matrix for the newton solver
+
+immutable DAE
+    F :: Function
+    y0; tstart
+    reltol; abstol
+    initstep; maxstep; minstep; maxorder; dy0; tstop
+    norm; weights
+    factorizeJacobian
 end
 
-# there is no factorize for scalars
-Base.factorize(x::Number) = x
 
-function dasslStep(F             :: Function,
-                   y0,
-                   tstart;
-                   reltol   = 1//10^3,
-                   abstol   = 1//10^5,
-                   initstep = 1//10^4,
-                   maxstep  = Inf,
-                   minstep  = 0,
-                   maxorder = MAXORDER,
-                   dy0      = zero(y0),
-                   tstop    = Inf,
-                   norm     = dassl_norm,
-                   weights  = dassl_weights,
-                   factorizeJacobian = true, # whether to store factorized version of jacobian
-                   args...)
+function dasslIterator(F :: Function,
+                       y0,
+                       tstart;
+                       reltol   = 1/10^3,
+                       abstol   = 1/10^5,
+                       initstep = 1/10^4,
+                       maxstep  = Inf,
+                       minstep  = 0,
+                       maxorder = MAXORDER,
+                       dy0      = zero(y0),
+                       tstop    = Inf,
+                       norm     = dassl_norm,
+                       weights  = dassl_weights,
+                       factorizeJacobian = true, # whether to store factorized version of jacobian
+                       args...)
 
-    # we allocate the space for Jacobian of a function F(t,y,a*y+b)
-    # with a and b defined in the stepper!
-    T = eltype(y0)
+    return DAE(F,y0,tstart,
+               reltol,abstol,
+               initstep,maxstep,minstep,maxorder,dy0,tstop,
+               norm,weights,
+               factorizeJacobian)
+end
 
-    if( typeof(tstart) != T)
-        error("Incompatible types of tstart y0")
-    end
 
-    if typeof(y0) <: Number
-        g = zero(y0)
-    elseif typeof(y0) <: Vector
-        g = zeros(eltype(y0),length(y0),length(y0))
-    else
-        error("Unsupported type of y0; y0 should be a Number or a Vector")
-    end
-    # The parameter a has to be kept between consecutive calls of
-    # stepper!
-    a = zero(initstep)
-    # zip the stepper temporary variables in a type
-    prevJac = PreviousJacobian(a,g)
+# parameters for the Newton method.  a is a convergence coefficient in
+# the modified Newton method.  jac holds a Jacobian of a function
+# F(t,y,a*y+b) with a and b defined in the stepper!.  The type of jac
+# depends.
+type Newton
+    a :: Real
+    jac
+end
 
-    ord      = 1                    # initial method order
-    tout     = [tstart]            # initial time
-    h        = initstep                   # current step size
-    yout     = Array(typeof(y0),1)
-    yout[1]  = y0
-    dyout    = Array(typeof(y0),1)
-    dyout[1] = dy0
-    num_rejected = 0                # number of rejected steps
-    num_fail = 0                    # number of consecutive failures
-    nfixed   = 1                    # number of steps with fixed order
-    # and stepsize taken in a
-    # row.  Needed to make a decision
-    # on the order of the next step
+function Newton{T<:Number}(y0::Vector{T})
+    a = zero(T)
+    jac = zeros(T,length(y0),length(y0))
+    Newton(a,jac)
+end
 
-    r   = one(initstep)
+function Newton(y0::Number)
+    Newton(zero(y0),zero(y0))
+end
 
-    while tout[end] < tstop
+function Newton(::Any)
+    error("Unsupported type of initial data, y0 should be a Number of a Vector{Number}")
+end
 
-        hmin = max(4*eps(T),minstep)
-        h = min(h,maxstep,tstop-tout[end])
 
-        if h < hmin
-            info("Stepsize too small (h=$h at t=$(tout[end]).")
+type DAEstate
+    tout    :: Vector
+    yout    :: Vector
+    dyout   :: Vector
+    h       :: Real
+    newton  :: Newton           # parameters for Newton method
+    stop    :: Bool
+    counter :: Counter          # see counters.jl
+    order   :: Int              # last order
+    r       :: Real                # last stepsize multiplier
+end
+
+
+done(::DAE,state::DAEstate) = state.stop
+
+
+function start(dae::DAE)
+    tout  = [dae.tstart]        # initial time
+    yout  = Array(typeof(dae.y0),0)
+    push!(yout,dae.y0)
+    dyout  = Array(typeof(dae.dy0),0)
+    push!(dyout,dae.dy0)
+
+    h0    = dae.initstep
+    return DAEstate(tout,yout,dyout,
+                    h0,Newton(dae.y0),
+                    false,Counter(),1,one(h0))
+end
+
+
+function next(dae::DAE, state::DAEstate)
+
+    # repeat until the step converges
+    while true
+
+        t = state.tout[end]
+        h = min(state.h, dae.maxstep, dae.tstop-t)
+        hmin = max(4*eps(typeof(h)),dae.minstep)
+
+        if h < hmin             # h < 0 will catch t > dae.tstop
+            info("Stepsize too small (h=$h at t=$t.")
+            error("Define return 2")
             break
-        elseif num_fail >= -2/3*log(eps(T))
-            info("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]).")
+        elseif state.counter.rejected_current >= -2/3*log(eps(typeof(h)))
+            info("Too many ($num_fail) failed steps in a row (h=$h at t=$t.")
+            error("Define return 3")
             break
         end
 
         # error weights
-        wt = weights(yout[end],reltol,abstol)
+        wt = dae.weights(state.yout[end],dae.reltol,dae.abstol)
         normy(v) = norm(v,wt)
 
-        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,prevJac,wt,normy,maxorder,factorizeJacobian)
+        (status,err,yn,dyn)=stepper!(state,dae,h,wt,normy)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
             # the step size and try again
 
-            # increase the failure counter
-            num_fail     += 1
-            # keep track of the total number of rejected steps
-            num_rejected += 1
-            # reduce the step by 25%
+            # update the step counter
+            rejected!(state.counter)
+
+            # reduce the step by 25% and try again
             h *= 1/4
             continue
 
@@ -100,12 +141,10 @@ function dasslStep(F             :: Function,
             # local error is too large.  Step is rejected, and we try
             # again with new step size and order.
 
-            # increase the failure counter
-            num_fail     += 1
-            # keep track of the total number of rejected steps
-            num_rejected += 1
+            rejected!(state.counter)
+
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([tout, tout[end]+h],yout,normy,ord,num_fail,nfixed,err,maxorder)
+            (r,ord) = newStepOrder(state,dae,h,normy,err)
             h *= r
             continue
 
@@ -114,46 +153,43 @@ function dasslStep(F             :: Function,
             # step is accepted #
             ####################
 
-            # reset the failure counter
-            num_fail      = 0
-
-            # save the results
-            push!(tout, tout[end]+h)
-            push!(yout, yn)
-            push!(dyout,dyn)
-
-            # remove old results
-            if length(tout) > maxorder+3
-                shift!(tout)
-                shift!(yout)
-                shift!(dyout)
-            end
-
-            produce(tout[end],yout[end],dyout[end])
+            accepted!(state.counter)
+            push_step!(state,t+h,yn,dyn)
 
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([tout, tout[end]+h],yout,normy,ord,num_fail,nfixed,err,maxorder)
+            (r_new,ord_new) = newStepOrder(state,dae,h,normy,err)
 
-            if ord_new == ord && r_new == r
-                nfixed += 1
+            if ord_new == state.order && r_new == state.r
+                order_unchanged!(state.counter)
             else
-                # @todo am I counting the number of fixed
-                # order/stepsize steps correctly?
-                nfixed = 1
+                order_changed!(state.counter)
             end
 
-            (r,ord) = (r_new,ord_new)
+            (state.r,state.order) = (r_new,ord_new)
+            state.h *= state.r
 
-            h *= r
+            out = (state.tout[end],state.yout[end],state.dyout[end])
+
+            return (out,state)
+
         end
 
     end
 
 end
 
-
-# the iterator version of the dasslSolve
-dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
+# If the step is accepted we push it to the top if we have more than
+# MAXORDER+3 of steps stored we delete the oldest ones.
+function push_step!(state::DAEstate,t,y,dy)
+    push!(state.tout,t)
+    push!(state.yout,y)
+    push!(state.dyout,dy)
+    if length(state.tout) > MAXORDER+3
+        shift!(state.tout)
+        shift!(state.yout)
+        shift!(state.dyout)
+    end
+end
 
 
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
@@ -176,14 +212,17 @@ function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
 end
 
 
-function newStepOrder(t         :: Vector,
-                      y         :: Vector,
-                      normy     :: Function,
-                      k         :: Int,
-                      num_fail  :: Int,
-                      nfixed    :: Int,
-                      erk       :: Real,
-                      maxorder  :: Int)
+function newStepOrder(state::DAEstate,
+                      dae :: DAE,
+                      h :: Real,
+                      normy :: Function,
+                      erk :: Real)
+
+    t        = [state.tout,state.tout[end]+h]
+    k        = state.order
+    num_fail = state.counter.rejected_current
+    maxorder = dae.maxorder
+    y        = state.yout
 
     if length(t) != length(y)+1
         error("incompatible size of y and t")
@@ -216,7 +255,7 @@ function newStepOrder(t         :: Vector,
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,normy,k,nfixed,erk,maxorder)
+        (r,order) = newStepOrderContinuous(t,y,normy,k,state.counter.fixed,erk,maxorder)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
         # if the previous step failed don't increase the order
@@ -384,24 +423,22 @@ function errorEstimates(t        :: Vector,
 
 end
 
-
-# t is an array [t_1,...,t_n] of length n
-# y is a matrix [y_1,...,y_n] of size k x l
+# state.t is an array [t_1,...,t_n] of length n
+# state.y is a matrix [y_1,...,y_n] of size k x l, the same for state.dy
 # h_next is a size of next step
-# F encodes the DAE: F(y,y',t)=0
-# prevJac is a bunch of auxilary data saved between steps
+# dae encodes the fixed parameters of the DAE (including a function we
+#     solve dae.F(y,y',t)=0).
 # wt is a vector of weights of the norm
-function stepper!(ord      :: Int,
-                  t        :: Vector,
-                  y        :: Vector,
-                  dy       :: Vector,
-                  h_next   :: Real,
-                  F        :: Function,
-                  prevJac    :: PreviousJacobian,
+function stepper!(state  :: DAEstate,
+                  dae    :: DAE,
+                  h_next :: Real,
                   wt,
-                  norm     :: Function,
-                  maxorder :: Int,
-                  factorizeJacobian :: Bool)
+                  norm   :: Function)
+
+    ord      = state.order
+    t        = state.tout
+    y        = state.yout
+    dy       = state.dyout
 
     l        = length(y[1])        # the number of dependent variables
 
@@ -417,8 +454,8 @@ function stepper!(ord      :: Int,
 
     # check whether order is between 1 and 6, for orders higher than 6
     # BDF does not converge
-    if ord < 1 || ord > maxorder
-        error("Order ord=$(ord) should be [1,...,$maxorder]")
+    if ord < 1 || ord > dae.maxorder
+        error("Order ord=$(ord) should be [1,...,$(dae.maxorder)]")
         return(-1)
     end
 
@@ -454,24 +491,24 @@ function stepper!(ord      :: Int,
 
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
-    f_newton(yc)=F(t_next,yc,a*yc+b)
+    f_newton(yc)=dae.F(t_next,yc,a*yc+b)
 
     # if called, this function computes the jacobian of f_newton at
     # the point y0 via first order finite differences
     g_new()=G(f_newton,y0,delta)
 
     # this is the updated value of coefficient a, if jacobian is
-    # udpated, corrector will replace prevJac.a with a_new
+    # udpated, corrector will replace state.newton.a with a_new
     a_new=a
 
     # we compute the corrected value "yc", updating the gradient if necessary
-    (status,yc)=corrector(prevJac,  # old coefficient a and jacobian
+    (status,yc)=corrector(state.newton, # old coefficient a and jacobian
                           a_new,    # current coefficient a
                           g_new,    # this function is called when new jacobian is needed
                           y0,       # starting point for modified newton
                           f_newton, # we want to find zeroes of this function
                           norm,     # the norm used to estimate error needs weights
-                          factorizeJacobian)
+                          dae.factorizeJacobian)
 
     alpha = Array(eltype(t),ord+1)
 
@@ -507,7 +544,7 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector(prevJac  :: PreviousJacobian,
+function corrector(newton   :: Newton,
                    a_new    :: Real,
                    g_new    :: Function,
                    y0,
@@ -517,33 +554,33 @@ function corrector(prevJac  :: PreviousJacobian,
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
-    if abs((prevJac.a-a_new)/(prevJac.a+a_new)) > 1/4
+    if abs((newton.a-a_new)/(newton.a+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
-        prevJac.G=g_new()
+        newton.jac=g_new()
         if factorizeJacobian
-            prevJac.G=Base.factorize(prevJac.G)
+            newton.jac=Base.factorize(newton.jac)
         end
-        prevJac.a=a_new
+        newton.a=a_new
         # run the corrector
-        (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
+        (status,yc)=newton_iteration( x->(-(newton.jac\f_newton(x))), y0, norm)
     else
         # old jacobian should give reasonable convergence
-        c=2*prevJac.a/(a_new+prevJac.a)     # factor "c" is used to speed up
+        c=2*newton.a/(a_new+newton.a)     # factor "c" is used to speed up
         # the convergence when using an
         # old jacobian
         # reusing the old jacobian
-        (status,yc)=newton_iteration( x->(-c*(prevJac.G\f_newton(x))), y0, norm)
+        (status,yc)=newton_iteration( x->(-c*(newton.jac\f_newton(x))), y0, norm)
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
-            prevJac.G=g_new()
+            newton.jac=g_new()
             if factorizeJacobian
-                prevJac.G=Base.factorize(prevJac.G)
+                newton.jac=Base.factorize(newton.jac)
             end
-            prevJac.a=a_new
+            newton.a=a_new
             # run the corrector again
-            (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
+            (status,yc)=newton_iteration( x->(-(newton.jac\f_newton(x))), y0, norm)
         end
     end
 
