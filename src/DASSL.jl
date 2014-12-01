@@ -204,7 +204,7 @@ function newStepOrder(t         :: Vector,
         if num_fail == 0
             # previous step was accepted so we can increase the order
             # and the step size
-            (r,order) = (2,min(k+1,maxorder))
+            (r,order) = (2.0,min(k+1,maxorder))
         else
             # @todo I am not sure about the choice of order
             #
@@ -292,17 +292,17 @@ end
 #
 # num_fail is the number of steps that failed before this step, r is a
 # suggested step size multiplier.
-function normalizeStepSize(r :: Real, num_fail :: Int)
+function normalizeStepSize(r, num_fail)
 
     if num_fail == 0
         # previous step was accepted
         if r >= 2
-            r = 2
+            r = 2.0
         elseif r < 1
             # choose r from between 0.5 and 0.9
             r = max(1/2,min(r,9/10))
         else
-            r = 1
+            r = 1.0
         end
 
     elseif num_fail == 1
@@ -493,7 +493,7 @@ function stepper!(ord      :: Int,
 
     alpha0 = -sum(alpha[1:ord])
     M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
-    err    =  norm((yc-y0))*M
+    err::eltype(t) =  norm((yc-y0))*M
 
 
     # status<0 means the modified Newton method did not converge
@@ -507,13 +507,13 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector(prevJac  :: PreviousJacobian,
-                   a_new    :: Real,
-                   g_new    :: Function,
-                   y0,
-                   f_newton :: Function,
-                   norm     :: Function,
-                   factorizeJacobian :: Bool)
+function corrector{T}(prevJac  :: PreviousJacobian,
+                      a_new    :: T,
+                      g_new    :: Function,
+                      y0,
+                      f_newton :: Function,
+                      norm     :: Function,
+                      factorizeJacobian :: Bool)
 
     # if a_old == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -529,9 +529,10 @@ function corrector(prevJac  :: PreviousJacobian,
         (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
     else
         # old jacobian should give reasonable convergence
-        c=2*prevJac.a/(a_new+prevJac.a)     # factor "c" is used to speed up
-        # the convergence when using an
-        # old jacobian
+        c::T=2*prevJac.a/(a_new+prevJac.a) # factor "c" is used to speed
+                                        # up the convergence when
+                                        # using an old jacobian
+
         # reusing the old jacobian
         (status,yc)=newton_iteration( x->(-c*(prevJac.G\f_newton(x))), y0, norm)
 
@@ -563,8 +564,8 @@ function newton_iteration(f    :: Function,
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
 
-    delta=f(y0)
-    norm1=norm(delta)
+    delta::typeof(y0)=f(y0)
+    norm1::Float64=norm(delta)
     yn=y0+delta
 
     # after the first iteration the norm turned out to be very small,
@@ -582,7 +583,7 @@ function newton_iteration(f    :: Function,
     for i=1:3
 
         delta=f(yn)
-        normn=norm(delta)
+        normn::Float64=norm(delta)
         rho=(normn/norm1)^(1/i)
         yn=yn+delta
 
