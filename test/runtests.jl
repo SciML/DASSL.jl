@@ -1,8 +1,11 @@
 using DASSL
 using Base.Test
 
-F(t,y,dy)=(dy+y)
-sol(t)=exp(-t)
+F(t,y,dy)=(dy+y.^2)
+Fy(t,y,dy)=diagm(2y)
+Fdy(t,y,dy)=eye(length(y))
+
+sol(t)=1./(1 .+ t)
 const tspan=[0.0, 1.0]
 
 atol = 1.0e-5
@@ -25,6 +28,15 @@ for order=1:6
 
     @test  vcat(ynV...)==yn
     @test vcat(dynV...)==dyn
+
+    # analytical jacobian version (vector)
+    (tna,yna,dyna)=DASSL.dasslSolve(F, [sol(0.0)], tspan, maxorder = order, Fy = Fy, Fdy = Fdy)
+    aerror = maximum(abs(map(first,yn)-sol(tn)))
+    rerror = maximum(abs(map(first,yn)-sol(tn))/abs(sol(tn)))
+    nsteps = length(tn)
+
+    @test aerror < nsteps*atol
+    @test rerror < nsteps*rtol
 end
 
 # test the initial derivatives y0 using the van der Pol equation

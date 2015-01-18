@@ -4,66 +4,50 @@ export dasslIterator, dasslSolve
 
 const MAXORDER = 6
 
-type PreviousJacobian
-    a :: Real
-    G         # Jacobian matrix for the newton solver
+type JacData
+    a   :: Real
+    jac # Jacobian matrix for the newton solver
 end
 
-# there is no factorize for scalars
-Base.factorize(x::Number) = x
+function dasslStep{T<:Number}(F             :: Function,
+                              y0            :: Vector{T},
+                              tstart        :: Real;
+                              reltol   = 1e-3,
+                              abstol   = 1e-5,
+                              initstep = 1e-4,
+                              maxstep  = Inf,
+                              minstep  = 0,
+                              maxorder = MAXORDER,
+                              dy0      = zero(y0),
+                              tstop    = Inf,
+                              norm     = dassl_norm,
+                              weights  = dassl_weights,
+                              factorizeJacobian = true, # whether to store factorized version of jacobian
+                              Fy  = false,              # dF/dy
+                              Fdy = false,              # dF/dy'
+                              args...)
 
-function dasslStep(F             :: Function,
-                   y0,
-                   tstart;
-                   reltol   = 1//10^3,
-                   abstol   = 1//10^5,
-                   initstep = 1//10^4,
-                   maxstep  = Inf,
-                   minstep  = 0,
-                   maxorder = MAXORDER,
-                   dy0      = zero(y0),
-                   tstop    = Inf,
-                   norm     = dassl_norm,
-                   weights  = dassl_weights,
-                   factorizeJacobian = true, # whether to store factorized version of jacobian
-                   args...)
+    compjac = compute_jac(F,Fy,Fdy,factorizeJacobian)
+    n  = length(y0)
+    jd = JacData(zero(tstart),zeros(T,n,n)) # generate a dummy jacobian, it
+                                   # will be replaced by a real one
+                                   # after running stepper
 
-    # we allocate the space for Jacobian of a function F(t,y,a*y+b)
-    # with a and b defined in the stepper!
-    T = eltype(y0)
-
-    if( typeof(tstart) != T)
-        error("Incompatible types of tstart y0")
-    end
-
-    if typeof(y0) <: Number
-        g = zero(y0)
-    elseif typeof(y0) <: Vector
-        g = zeros(eltype(y0),length(y0),length(y0))
-    else
-        error("Unsupported type of y0; y0 should be a Number or a Vector")
-    end
-    # The parameter a has to be kept between consecutive calls of
-    # stepper!
-    a = zero(initstep)
-    # zip the stepper temporary variables in a type
-    prevJac = PreviousJacobian(a,g)
-
-    ord      = 1                    # initial method order
-    tout     = [tstart]            # initial time
-    h        = initstep                   # current step size
+    ord      = 1                # initial method order
+    tout     = [tstart]         # initial time
+    h        = initstep         # current step size
     yout     = Array(typeof(y0),1)
     yout[1]  = y0
     dyout    = Array(typeof(y0),1)
     dyout[1] = dy0
-    num_rejected = 0                # number of rejected steps
-    num_fail = 0                    # number of consecutive failures
-    nfixed   = 1                    # number of steps with fixed order
-    # and stepsize taken in a
-    # row.  Needed to make a decision
-    # on the order of the next step
+    num_rejected = 0            # number of rejected steps
+    num_fail = 0                # number of consecutive failures
+    nfixed   = 1                # number of steps with fixed order
+                                # and stepsize taken in a
+                                # row.  Needed to make a decision
+                                # on the order of the next step
 
-    r   = one(initstep)
+    r        = one(tstart)
 
     while tout[end] < tstop
 
@@ -82,7 +66,7 @@ function dasslStep(F             :: Function,
         wt = weights(yout[end],reltol,abstol)
         normy(v) = norm(v,wt)
 
-        (status,err,yn,dyn)=stepper!(ord,tout,yout,dyout,h,F,prevJac,wt,normy,maxorder,factorizeJacobian)
+        (status,err,yn,dyn,jd)=stepper(ord,tout,yout,dyout,h,F,jd,compjac,wt,normy,maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -157,7 +141,7 @@ dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
 
 
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
-function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
+function dasslSolve(F, y0 :: Vector, tspan; dy0 = zero(y0), args...)
     tout  = Array(typeof(tspan[1]),1)
     yout  = Array(typeof(y0),1)
     dyout = Array(typeof(y0),1)
@@ -173,6 +157,12 @@ function dasslSolve(F, y0, tspan; dy0 = zero(y0), args...)
         end
     end
     return (tout,yout,dyout)
+end
+
+# A scalar version of dasslSolve, implemented as a wrapper around dasslSolve
+function dasslSolve(F, y0 :: Number, tspan; args...)
+    (tout,yout,dyout) = dasslSolve(F,[y0],tspan; args...)
+    return (tout,map(first,yout),map(first,dyout))
 end
 
 
@@ -388,39 +378,26 @@ end
 # t is an array [t_1,...,t_n] of length n
 # y is a matrix [y_1,...,y_n] of size k x l
 # h_next is a size of next step
-# F encodes the DAE: F(y,y',t)=0
-# prevJac is a bunch of auxilary data saved between steps
+# F encodes the DAE: F(t,y,y')=0
+# jd is a bunch of auxilary data saved between steps (jacobian and last coefficient 'a')
 # wt is a vector of weights of the norm
-function stepper!(ord      :: Int,
-                  t        :: Vector,
-                  y        :: Vector,
-                  dy       :: Vector,
-                  h_next   :: Real,
-                  F        :: Function,
-                  prevJac    :: PreviousJacobian,
-                  wt,
-                  norm     :: Function,
-                  maxorder :: Int,
-                  factorizeJacobian :: Bool)
+function stepper(ord      :: Int,
+                 t        :: Vector,
+                 y        :: Vector,
+                 dy       :: Vector,
+                 h_next   :: Real,
+                 F        :: Function,
+                 jd       :: JacData,
+                 computejac :: Function,
+                 wt,
+                 norm     :: Function,
+                 maxorder :: Int)
 
     l        = length(y[1])        # the number of dependent variables
-
-    # sanity check
-    # @todo remove it in final version
-    if length(t) < ord || length(y) < ord
-        error("Not enough points in a grid to use method of order $ord")
-    end
 
     # @todo this should be the view of the tail of the arrays t and y
     tk = t[end-ord+1:end]
     yk = y[end-ord+1:end]
-
-    # check whether order is between 1 and 6, for orders higher than 6
-    # BDF does not converge
-    if ord < 1 || ord > maxorder
-        error("Order ord=$(ord) should be [1,...,$maxorder]")
-        return(-1)
-    end
 
     t_next   = tk[end]+h_next
 
@@ -457,21 +434,18 @@ function stepper!(ord      :: Int,
     f_newton(yc)=F(t_next,yc,a*yc+b)
 
     # if called, this function computes the jacobian of f_newton at
-    # the point y0 via first order finite differences
-    g_new()=G(f_newton,y0,delta)
-
-    # this is the updated value of coefficient a, if jacobian is
-    # udpated, corrector will replace prevJac.a with a_new
-    a_new=a
+    # the point y0 (via first order finite differences or
+    # user-supplied functions)
+    jac_new()=computejac(t_next,y0,a,b,delta)
 
     # we compute the corrected value "yc", updating the gradient if necessary
-    (status,yc)=corrector(prevJac,  # old coefficient a and jacobian
-                          a_new,    # current coefficient a
-                          g_new,    # this function is called when new jacobian is needed
-                          y0,       # starting point for modified newton
-                          f_newton, # we want to find zeroes of this function
-                          norm,     # the norm used to estimate error needs weights
-                          factorizeJacobian)
+    (status,yc,jd)=corrector(jd,       # old coefficient a and jacobian
+                             a,        # current coefficient a
+                             jac_new,  # this function is called when new jacobian is needed
+                             y0,       # starting point for modified newton
+                             f_newton, # we want to find zeroes of this function
+                             norm)     # the norm used to estimate error needs weights
+
 
     alpha = Array(eltype(t),ord+1)
 
@@ -499,7 +473,7 @@ function stepper!(ord      :: Int,
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
     # yc is the estimated value at the next step
-    return (status, err, yc, a*yc+b)
+    return (status, err, yc, a*yc+b, jd)
 
 end
 
@@ -507,48 +481,39 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T}(prevJac  :: PreviousJacobian,
+function corrector{T}(jd       :: JacData,
                       a_new    :: T,
-                      g_new    :: Function,
+                      jd_new   :: Function,
                       y0,
                       f_newton :: Function,
-                      norm     :: Function,
-                      factorizeJacobian :: Bool)
+                      norm     :: Function)
 
-    # if a_old == 0 the new jacobian is always computed, independently
+    # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
-    if abs((prevJac.a-a_new)/(prevJac.a+a_new)) > 1/4
+    if abs((jd.a-a_new)/(jd.a+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
-        prevJac.G=g_new()
-        if factorizeJacobian
-            prevJac.G=Base.factorize(prevJac.G)
-        end
-        prevJac.a=a_new
+        jd = jd_new()
         # run the corrector
-        (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
+        (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, norm)
     else
         # old jacobian should give reasonable convergence
-        c::T=2*prevJac.a/(a_new+prevJac.a) # factor "c" is used to speed
-                                        # up the convergence when
-                                        # using an old jacobian
+        c::T=2*jd.a/(a_new+jd.a) # factor "c" is used to speed up the
+                                 # convergence when using an old
+                                 # jacobian
 
         # reusing the old jacobian
-        (status,yc)=newton_iteration( x->(-c*(prevJac.G\f_newton(x))), y0, norm)
+        (status,yc)=newton_iteration( x->(-c*(jd.jac\f_newton(x))), y0, norm)
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
-            prevJac.G=g_new()
-            if factorizeJacobian
-                prevJac.G=Base.factorize(prevJac.G)
-            end
-            prevJac.a=a_new
+            jd=jd_new()
             # run the corrector again
-            (status,yc)=newton_iteration( x->(-(prevJac.G\f_newton(x))), y0, norm)
+            (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, norm)
         end
     end
 
-    return (status,yc)
+    return (status,yc,jd)
 
 end
 
@@ -618,30 +583,6 @@ end
 
 function dassl_weights(y,reltol,abstol)
     reltol*abs(y).+abstol
-end
-
-
-# compute the G matrix from dassl (jacobian of F(t,x,a*x+b))
-# @todo replace with symmetric finite difference?
-
-# Number version
-function G(f     :: Function,
-           y0    :: Number,
-           delta :: Number)
-    return (f(y0+delta)-f(y0))/delta
-end
-
-# Vector version
-function G(f     :: Function,
-           y0    :: Vector,
-           delta :: Vector)
-    n=length(y0)
-    edelta=diagm(delta)
-    s=Array(eltype(y0),n,n)
-    for i=1:n
-        s[:,i]=(f(y0+edelta[:,i])-f(y0))/delta[i]
-    end
-    return(s)
 end
 
 # returns the value of the interpolation polynomial at the point x0
@@ -732,6 +673,42 @@ function interpolateHighestDerivative(x::Vector,
         p+=Li*y[i]
     end
     return p
+end
+
+# compute jacobian using analytical formulas for dF/dy and dF/dy'
+# provided by the user
+function compute_jac(F, Fy::Function, Fdy::Function, factorizeJacobian)
+    function cj(t,y0,a,b,delta)
+        dy0 = a*y0+b
+        jac = Fy(t,y0,dy0)+a*Fdy(t,y0,dy0)
+
+        if factorizeJacobian
+            return JacData(a,Base.factorize(jac))
+        else
+            return JacData(a,jac)
+        end
+    end
+end
+
+# compute approximate jacobian using finite differences
+function compute_jac(F, Fy, Fdy, factorizeJacobian)
+    function cj(t,y0,a,b,delta)
+        f(y) = F(t,y,a*y+b)
+
+        n=length(y0)
+        edelta=diagm(delta)
+        jac=Array(eltype(y0),n,n)
+        for i=1:n
+            jac[:,i]=(f(y0+edelta[:,i])-f(y0))/delta[i]
+        end
+
+        if factorizeJacobian
+            jd = JacData(a,Base.factorize(jac))
+            return jd
+        else
+            return JacData(a,jac)
+        end
+    end
 end
 
 end
