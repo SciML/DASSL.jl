@@ -51,7 +51,7 @@ function dasslStep{T<:Number}(F             :: Function,
 
     while tout[end] < tstop
 
-        hmin = max(4*eps(T),minstep)
+        hmin = max(4*eps(tout[end]),minstep)
         h = min(h,maxstep,tstop-tout[end])
 
         if h < hmin
