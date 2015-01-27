@@ -29,14 +29,14 @@ You can also change the relative error tolerance `rtol`, absolute
 error tolerance `atol` as well as initial step size `h0` as follows
 
 ```
-(tn,yn)   = dasslSolve(F,y0,tspan,rtol=10.0^-3,atol=10.0^-5,h0=10.0^-4)
+(tn,yn)   = dasslSolve(F,y0,tspan)
 ```
 
 To test the convergence and execution time for index-1 problem run
 `convergence.jl` from the `test` directory.
 
-DASSL.jl also supports multiple equations.  For example the pendulum
-equation
+Naturally, DASSL.jl also supports multiple equations.  For example the
+pendulum equation
 
 ```
 u'-v=0
@@ -68,13 +68,78 @@ tspan   = [0.0,10.0]
 (tn,yn) = dasslSolve(F,y0,tspan)
 ```
 
+Output
+------
+
+Apart from producing the times `tn` and values `yn`, dasslSolve also
+produces the derivatives `dyn` (as the byproduct of BDF
+algorithm), e.g.
+
+```
+(tn,yn,dyn) = dasslSolve(F,y0,tspan)
+```
+
+The decision to produce these values is that it is not entirely
+trivial to compute `y'` from `F(t,y,y')=0` when `t` and `y` are given.
+
+Keyword arguments
+-----------------
+
+DASSL supports a number of keyword arguments, the names of most of
+them are compatible with the namse used in ODE package.
+
+- `reltol=1e-3`/`abstol=1e-5` set the relative/absolute local error tolerances
+
+- `initstep=1e-4`/`minstep=0`/`maxstep=Inf` set the
+  initial/minimal/maximal step sizes (when step size drops below
+  minimum the integration stops)
+
+- `jacobian` The most expensive step during the integration is solving
+  the nonlinear equation `F(t,y,a*y+b)=0` via Newton's method, which
+  requires a jacobian of the form `dF/dy+a*dF/dy'`.  By default, the
+  solver approximates this Jacobian by a method of finite differences
+  but you can provide your own method as a function
+  `(t,y,dy,a)->dF/dy+a*dF/dy'`.  For the pendulum equation we would
+  define jacobian as
+
+  ```
+  jacobian=(t,y,dy,a)->[[a,cos(y[1])] [-1,a]]
+  ```
+
+- `maxorder=6` Apart from selecting the current step size DASSL method
+  can also dynamically change the order of BDF method used.  BDF is
+  stable up to 6-th order, which is the defaul upper limit but for
+  some systems of equations it may make more sense to use lower
+  orders.
+
+- `dy0=zero(y)` When solving differential algebraic equations it is
+  important to start with consistent initial conditions, i.e. to
+  choose `y` and `y'` such that `F(t,y,y')=0` initially.  DASSL tries
+  to guess the initial value of `y'`, but if it fails you can set your
+  own initial condtions for the derivative.
+
+- `norm=dassl_norm`/`weights=dassl_weights` DASSL computes the error
+  roughly as `err=norm(yc-y0)`, and accepting the step when
+  `err<1`.  The local error tolerances `reltol` and `abstol` are
+  hidden in the definition of `dassl_norm(v,
+  wt)=norm(v./wt)/sqrt(length(v))`, where weights `wt` are defined by
+  `dassl_weights(y,reltol,abstol)=reltol*abs(y).+abstol`.  You can
+  supply your own weights and norms when they are more appropriate for
+  the problem at hand.
+
+- `factorize_jacobian=true` is a Boolean option which forces the
+  factorization of Jacobian before storing it.  It dramatically
+  increases performance for large systems, but may decrease the
+  computation speed for small systems.
+
+
 Iterator version
 ----------------
 
-The newest version of DASSL.jl supports iterative version of solver
-(implemented via coroutines) via `dasslIterator`.  In the following
-example the `dasslIterator` is used to stop the integration when the
-solution `y` drops below `0.1`
+DASSL.jl supports an iterative version of solver (implemented via
+coroutines, so debugging might be a little tricky) via
+`dasslIterator`.  In the following example the `dasslIterator` is used
+to stop the integration when the solution `y` drops below `0.1`
 
 
 ```
@@ -88,10 +153,3 @@ for (t,y,dy) in dasslIterator(F,1.0,0.0)
     end
 end
 ```
-
-Performance
------------
-
-I added an option `factorizeJacobian` (defaults to `true`), which
-forces the factorization of Jacobian before storing it.  It
-dramatically increases performance for large systems.
