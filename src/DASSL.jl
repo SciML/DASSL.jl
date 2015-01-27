@@ -23,17 +23,14 @@ function dasslStep{T<:Number}(F             :: Function,
                               tstop    = Inf,
                               norm     = dassl_norm,
                               weights  = dassl_weights,
-                              factorizeJacobian = true, # whether to store factorized version of jacobian
-                              Fy  = false,              # dF/dy
-                              Fdy = false,              # dF/dy'
+                              factorize_jacobian = true, # whether to store factorized version of jacobian
+                              jacobian = numerical_jacobian(F,reltol,abstol,weights), # computes the quantity F/dy+a*dF/dy'
                               args...)
 
-    compjac = compute_jac(F,Fy,Fdy,factorizeJacobian)
     n  = length(y0)
-    jd = JacData(zero(tstart),zeros(T,n,n)) # generate a dummy jacobian, it
-                                   # will be replaced by a real one
-                                   # after running stepper
-
+    jd = JacData(zero(tstart),zeros(T,n,n)) # generate a dummy
+                                   # jacobian, it will be replaced by
+                                   # a real one after running stepper
 
     ord      = 1                # initial method order
     tout     = [tstart]         # initial time
@@ -45,10 +42,17 @@ function dasslStep{T<:Number}(F             :: Function,
     num_rejected = 0            # number of rejected steps
     num_fail = 0                # number of consecutive failures
 
+    # wrapper around the jacobian function
+    if factorize_jacobian
+        computejac = (t,y,dy,a) -> Base.factorize(jacobian(t,y,dy,a))
+    else
+        computejac = jacobian
+    end
+
     # This is the trick to improve on the initial guess for
     # y0.  Basically we run a one iteration of stepper and use the
     # result as the initial derivative
-    (_,_,_,dyout[1],_)=stepper(1,tout,yout,dyout,10*eps(one(tstart)),F,jd,compjac,weights(y0,1,1),v->norm(v,weights(y0,1,1)),1)
+    (_,_,_,dyout[1],_)=stepper(1,tout,yout,dyout,10*eps(one(tstart)),F,jd,computejac,weights(y0,1,1),v->norm(v,weights(y0,1,1)),1)
 
     while tout[end] < tstop
 
@@ -67,7 +71,7 @@ function dasslStep{T<:Number}(F             :: Function,
         wt = weights(yout[end],reltol,abstol)
         normy(v) = norm(v,wt)
 
-        (status,err,yn,dyn,jd)=stepper(ord,tout,yout,dyout,h,F,jd,compjac,wt,normy,maxorder)
+        (status,err,yn,dyn,jd)=stepper(ord,tout,yout,dyout,h,F,jd,computejac,wt,normy,maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -423,12 +427,6 @@ function stepper(ord      :: Int,
         b=dy0-a*y0
     end
 
-    # delta for approximation of jacobian.  I removed the
-    # sign(h_next*dy0) from the definition of delta because it was
-    # causing trouble when dy0==0 (which happens for ord==1)
-    ep    = eps(one(eltype(abs(y0)))) # this is the machine epsilon
-    delta = max(abs(y0),abs(h_next*dy0),wt)*sqrt(ep)
-
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
     f_newton(yc)=F(t_next,yc,a*yc+b)
@@ -436,8 +434,7 @@ function stepper(ord      :: Int,
     # if called, this function computes the jacobian of f_newton at
     # the point y0 (via first order finite differences or
     # user-supplied functions)
-    # jac_new()=computejac(t_next,y0,a,b,delta)
-    jac_new()=computejac(t[end],y[end],a,b,delta)
+    jac_new()=computejac(t_next,y0,dy0,a)
 
     # we compute the corrected value "yc", updating the gradient if necessary
     (status,yc,jd)=corrector(jd,       # old coefficient a and jacobian
@@ -481,19 +478,19 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T}(jd       :: JacData,
-                      a_new    :: T,
-                      jd_new   :: Function,
-                      y0,
-                      f_newton :: Function,
-                      normy     :: Function)
+function corrector{T,Ty}(jd       :: JacData,
+                         a_new    :: T,
+                         jac_new  :: Function,
+                         y0       :: Vector{Ty},
+                         f_newton :: Function,
+                         normy    :: Function)
 
     # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
     if abs((jd.a-a_new)/(jd.a+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
-        jd = jd_new()
+        jd = JacData(a_new,jac_new())
         # run the corrector
         (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, normy)
     else
@@ -507,7 +504,7 @@ function corrector{T}(jd       :: JacData,
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
-            jd=jd_new()
+            jd = JacData(a_new,jac_new())
             # run the corrector again
             (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, normy)
         end
@@ -675,40 +672,28 @@ function interpolateHighestDerivative(x::Vector,
     return factorial(n-1)*p
 end
 
+# generate a function that computes approximate jacobian using forward
+# finite differences
+function numerical_jacobian(F,reltol,abstol,weights)
+    function numjac(t, y, dy, a)
+        ep      = eps(one(t))   # this is the machine epsilon
+        h       = 1/a           # h ~ 1/a
+        wt      = weights(y,reltol,abstol)
+        # delta for approximation of jacobian.  I removed the
+        # sign(h_next*dy0) from the definition of delta because it was
+        # causing trouble when dy0==0 (which happens for ord==1)
+        edelta  = diagm(max(abs(y),abs(h*dy),wt)*sqrt(ep))
 
-# compute jacobian using analytical formulas for dF/dy and dF/dy'
-# provided by the user
-function compute_jac(F, Fy::Function, Fdy::Function, factorizeJacobian)
-    function cj(t,y0,a,b,delta)
-        dy0 = a*y0+b
-        jac = Fy(t,y0,dy0)+a*Fdy(t,y0,dy0)
+        b=dy-a*y
+        f(y1) = F(t,y1,a*y1+b)
 
-        if factorizeJacobian
-            return JacData(a,Base.factorize(jac))
-        else
-            return JacData(a,jac)
-        end
-    end
-end
-
-# compute approximate jacobian using finite differences
-function compute_jac(F, Fy, Fdy, factorizeJacobian)
-    function cj(t,y0,a,b,delta)
-        f(y) = F(t,y,a*y+b)
-
-        n=length(y0)
-        edelta=diagm(delta)
-        jac=Array(eltype(y0),n,n)
+        n   = length(y)
+        jac = Array(eltype(y),n,n)
         for i=1:n
-            jac[:,i]=(f(y0+edelta[:,i])-f(y0))/delta[i]
+            jac[:,i]=(f(y+edelta[:,i])-f(y))/edelta[i,i]
         end
 
-        if factorizeJacobian
-            jd = JacData(a,Base.factorize(jac))
-            return jd
-        else
-            return JacData(a,jac)
-        end
+        jac
     end
 end
 
