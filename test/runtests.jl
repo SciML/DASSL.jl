@@ -20,8 +20,8 @@ for order=1:6
     rerror = maximum(abs(yn-sol(tn))/abs(sol(tn)))
     nsteps = length(tn)
 
-    @test aerror < nsteps*atol
-    @test rerror < nsteps*rtol
+    @test aerror < 2*nsteps*atol
+    @test rerror < 2*nsteps*rtol
 
     # vector version
     (tnV,ynV,dynV)=DASSL.dasslSolve(F,[sol(0.0)], tspan, maxorder = order)
@@ -35,8 +35,8 @@ for order=1:6
     rerror = maximum(abs(map(first,yn)-sol(tn))/abs(sol(tn)))
     nsteps = length(tn)
 
-    @test aerror < nsteps*atol
-    @test rerror < nsteps*rtol
+    @test aerror < 2*nsteps*atol
+    @test rerror < 2*nsteps*rtol
 end
 
 # test the initial derivatives y0 using the van der Pol equation

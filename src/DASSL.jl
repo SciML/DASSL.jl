@@ -3,6 +3,7 @@ module DASSL
 export dasslIterator, dasslSolve
 
 const MAXORDER = 6
+const MAXIT = 10
 
 type JacData
     a   :: Real
@@ -33,31 +34,31 @@ function dasslStep{T<:Number}(F             :: Function,
                                    # will be replaced by a real one
                                    # after running stepper
 
+
     ord      = 1                # initial method order
     tout     = [tstart]         # initial time
     h        = initstep         # current step size
     yout     = Array(typeof(y0),1)
     yout[1]  = y0
     dyout    = Array(typeof(y0),1)
-    dyout[1] = dy0
+    dyout[1] = dy0              # initial guess for dy0
     num_rejected = 0            # number of rejected steps
     num_fail = 0                # number of consecutive failures
-    nfixed   = 1                # number of steps with fixed order
-                                # and stepsize taken in a
-                                # row.  Needed to make a decision
-                                # on the order of the next step
 
-    r        = one(tstart)
+    # This is the trick to improve on the initial guess for
+    # y0.  Basically we run a one iteration of stepper and use the
+    # result as the initial derivative
+    (_,_,_,dyout[1],_)=stepper(1,tout,yout,dyout,10*eps(one(tstart)),F,jd,compjac,weights(y0,1,1),v->norm(v,weights(y0,1,1)),1)
 
     while tout[end] < tstop
 
-        hmin = max(4*eps(tout[end]),minstep)
+        hmin = max(4*eps(one(tstart)),minstep)
         h = min(h,maxstep,tstop-tout[end])
 
         if h < hmin
             info("Stepsize too small (h=$h at t=$(tout[end]).")
             break
-        elseif num_fail >= -2/3*log(eps(T))
+        elseif num_fail >= -2/3*log(eps(one(tstart)))
             info("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]).")
             break
         end
@@ -88,8 +89,13 @@ function dasslStep{T<:Number}(F             :: Function,
             num_fail     += 1
             # keep track of the total number of rejected steps
             num_rejected += 1
+            # temporarily push the new step to the yout (needed by newStepOrder)
+            push!(tout,tout[end]+h); push!(yout,yn)
             # determine the new step size and order, excluding the current step
-            (r,ord) = newStepOrder([tout, tout[end]+h],yout,normy,ord,num_fail,nfixed,err,maxorder)
+            (r,ord) = newStepOrder(tout,yout,normy,err,ord,num_fail,maxorder)
+
+            # pop the temporary steps
+            pop!(tout); pop!(yout)
             h *= r
             continue
 
@@ -107,26 +113,16 @@ function dasslStep{T<:Number}(F             :: Function,
             push!(dyout,dyn)
 
             # remove old results
-            if length(tout) > maxorder+3
+            if length(tout) > ord+3
                 shift!(tout)
                 shift!(yout)
                 shift!(dyout)
             end
 
-            produce(tout[end],yout[end],dyout[end])
+            produce(tout[end],yout[end],dyout[end],ord)
 
             # determine the new step size and order, including the current step
-            (r_new,ord_new) = newStepOrder([tout, tout[end]+h],yout,normy,ord,num_fail,nfixed,err,maxorder)
-
-            if ord_new == ord && r_new == r
-                nfixed += 1
-            else
-                # @todo am I counting the number of fixed
-                # order/stepsize steps correctly?
-                nfixed = 1
-            end
-
-            (r,ord) = (r_new,ord_new)
+            (r,ord) = newStepOrder(tout,yout,normy,err,ord,num_fail,maxorder)
 
             h *= r
         end
@@ -145,18 +141,21 @@ function dasslSolve(F, y0 :: Vector, tspan; dy0 = zero(y0), args...)
     tout  = Array(typeof(tspan[1]),1)
     yout  = Array(typeof(y0),1)
     dyout = Array(typeof(y0),1)
+    ordout = Array(Int,1)
     tout[1]  = tspan[1]
     yout[1]  = y0
     dyout[1] = dy0
-    for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0=dy0, tstop=tspan[end], args...)
+    ordout[1] = 1
+    for (t, y, dy,ord) in dasslIterator(F, y0, tspan[1]; dy0=dy0, tstop=tspan[end], args...)
         push!( tout,  t)
         push!( yout,  y)
         push!(dyout, dy)
+        push!(ordout, ord)
         if t >= tspan[end]
             break
         end
     end
-    return (tout,yout,dyout)
+    return (tout,yout,dyout,ordout)
 end
 
 # A scalar version of dasslSolve, implemented as a wrapper around dasslSolve
@@ -169,17 +168,16 @@ end
 function newStepOrder(t         :: Vector,
                       y         :: Vector,
                       normy     :: Function,
+                      err,
                       k         :: Int,
                       num_fail  :: Int,
-                      nfixed    :: Int,
-                      erk       :: Real,
                       maxorder  :: Int)
 
-    if length(t) != length(y)+1
+    if length(t) != length(y)
         error("incompatible size of y and t")
     end
 
-    available_steps = length(t)
+    available_steps = length(t) # including the step t_{n+1}
 
     if num_fail >= 3
         # probably, the step size was drastically decreased for
@@ -187,28 +185,39 @@ function newStepOrder(t         :: Vector,
         # further decrease the step size
         (r,order) = (1/4,1)
 
-    elseif available_steps < k+3
+    elseif num_fail == 1 && available_steps == 1 && err > 1
+        # the last step was accepted, increase order to two
+        (r,order) = (1/4,1)
+
+    elseif num_fail == 0 && available_steps == 2 && err < 1
+        # The first successfull step, try increasing the order without changing the step size
+        (r,order) = (1, 2)
+
+    elseif available_steps < k+2
         # we are at the beginning of the integration, we don't have
         # enough steps to run newStepOrderContinuous, we have to rely
         # on a crude order/stepsize selection
         if num_fail == 0
             # previous step was accepted so we can increase the order
             # and the step size
-            (r,order) = (2.0,min(k+1,maxorder))
+            # (r,order) = (2.0,min(k+1,maxorder))
+            (r,order) = ((2*err+1/10000)^(-1/(k+1)), k)
+            # (r,order) = (2.0,1)
         else
             # @todo I am not sure about the choice of order
             #
             # previous step was rejected, we have to decrease the step
             # size and order
-            (r,order) = (1/4,max(k-1,1))
+            (r,order) = (1/4,1)
         end
 
     else
         # we have at least k+3 previous steps available, so we can
         # safely estimate the order k-2, k-1, k and possibly k+1
-        (r,order) = newStepOrderContinuous(t,y,normy,k,nfixed,erk,maxorder)
+        (r,order) = newStepOrderContinuous(t,y,normy,err,k,maxorder)
         # this function prevents from step size changing too rapidly
         r = normalizeStepSize(r,num_fail)
+
         # if the previous step failed don't increase the order
         if num_fail > 0
             order = min(order,k)
@@ -224,46 +233,35 @@ end
 function newStepOrderContinuous(t        :: Vector,
                                 y        :: Vector,
                                 normy    :: Function,
+                                err,
                                 k        :: Int,
-                                nfixed   :: Int,
-                                erk      :: Real,
                                 maxorder :: Int)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
-    errors  = errorEstimates(t,y,normy,k,nfixed,maxorder)
-    errors[k] = erk
-    # normalized errors, this is TERK from DASSL
-    nerrors = errors .* [2:maxorder+1]
+    errors  = errorEstimates(t,y,normy,k)
+    errors[k] = err
+    ne = length(errors)         # == k or k+1
 
-    order = k
+    # we want to be conservative in our choice of order so we consider
+    # not only a monotone sequences but geometrically monotone
+    # sequences
+    errors_dec  = all(diff([errors[i] for i=max(k-2,1):min(ne,maxorder)]).<0)
+    errors_inc  = all(diff([errors[i] for i=max(k-2,1):min(ne,maxorder)]).>0)
 
-    if k == maxorder
+
+    if ne == k+1 && errors_dec
+        # If we can estimate the error for k+1 order and the Taylor
+        # expansion errors form a decreasing sequence, we can safely
+        # increase the order
+        order = min(k+1,maxorder)
+    elseif ne > 1 && errors_inc
+        # Taylor expansion errors form an increasing sequence, we
+        # should decrease the order
+        order = max(k-1,1)
+    else
+        # otherwise, leave the current order
         order = k
-
-    elseif k == 1
-        if nerrors[k]/2 > nerrors[k+1]
-            order = k+1
-        end
-
-    elseif k >= 2
-        if k == 2 && nerrors[k-1] < nerrors[k]/2
-            order = k-1
-        elseif k >= 3 && max(nerrors[k-1],nerrors[k-2]) <= nerrors[k]
-            order = k-1
-        elseif false
-            # @todo don't increase order two times in a row
-            order = k
-        elseif nfixed >= k+1
-            # if the estimate for order k+1 is available
-            if nerrors[k-1] <= min(nerrors[k],nerrors[k+1])
-                order = k-1
-            elseif nerrors[k] <= nerrors[k+1]
-                order = k
-            else
-                order = k+1
-            end
-        end
     end
 
     # error estimate for the next step
@@ -314,62 +312,60 @@ end
 
 
 # this function estimates the errors of methods of order k-2,k-1,k,k+1
-# and returns the estimates as an array seq the estimates require
+# and returns the estimates as an array.
+#
+# This method requires at least k previous steps (not including the
+# predicted step), so the length of tables t and y should be at least
+# k+2. In particular, these estimates won't work for the first step.
+#
+# The error estimates for order `kest` are computed as the maximal
+# derivative `err=norm(h^{(kest+1)}*u^{(kest+1)})` of an interpolating
+# polynomial constructed from kest+1 steps at
+# t_{n+1},...,t_{n-kest}.  So to estimate the error of e.g. order
+# `kest=1` we need steps `t_{n+1},t_{n},t_{n-1}`, in general this
+# method needs k+1 previous steps and one future step.
+#
+# additionally, if the previous k+1 steps were made with the same time
+# step, we can estimate the error for order k+1.
+#
 
-# here t is an array of times    [t_1, ..., t_n, t_{n+1}]
-# and y is an array of solutions [y_1, ..., y_n]
+# here t is an array of times    t=[t_1, ..., t_n, t_{n+1}]
+# and y is an array of solutions y=[y_1, ..., y_n, y_{n+1}]
 function errorEstimates(t        :: Vector,
                         y        :: Vector,
                         normy    :: Function,
-                        k        :: Int,
-                        nfixed   :: Int,
-                        maxorder :: Int)
+                        k        :: Int)
 
-    h = diff(t)
+    nsteps = length(t)          # available steps (including counting
+                                # the new n+1'st step)
+    h  = t[end]-t[end-1]        # current step size
 
-    l = length(y[1])
-
-    psi    = cumsum(reverse(h[end-k-1:end]))
-
-    # @todo there is no need to allocate array of size 1:k+3, we only
-    # need a four element array k:k+3
-    phi    = zeros(eltype(y[1]),l,k+3)
-    # fill in all but a last (k+3)-rd row of phi
-    for i = k:k+2
-        phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[end-i+1:end])
+    if nsteps < k+2
+        error("errorEstimates called with too few steps.")
     end
 
-    sigma  = zeros(eltype(t),k+2)
-    sigma[1] = 1
-    for i = 2:k+2
-        sigma[i] = (i-1)*sigma[i-1]*h[end]/psi[i]
+    # estimates the error for orders [k-2,k-1,k]
+    errors = zeros(eltype(t),k)
+
+    for i = max(k-2,1):k
+        # @todo can this be optimized by inlining the body of
+        # interpolateHighestDerivative?
+        maxd=interpolateHighestDerivative(t[end-(i+1):end],y[end-(i+1):end])
+        errors[i]=h^(i+1)*normy(maxd)
     end
 
-    errors    = zeros(eltype(t),maxorder)
-    errors[k] = sigma[k+1]*normy(phi[:,k+2])
-
-    if k >= 2
-        # error estimate for order k-1
-        errors[k-1] = sigma[k]*normy(phi[:,k+1])
-    end
-
-    if k >= 3
-        # error estimate for order k-2
-        errors[k-2] = sigma[k-1]*normy(phi[:,k])
-    end
-
-    if k+1 <= maxorder && nfixed >= k+1
-        # error estimate for order k+1
-        # fill in the rest of the phi array (the (k+3)-rd row)
-        for i = k+3:k+3
-            phi[:,i] = prod(psi[1:i-1])*interpolateHighestDerivative(t[end-i+1:end],y[end-i+1:end])
+    # compute the estimate the k+1 order only if all the steps were
+    # made using the same stepsize
+    if nsteps >= k+3
+        hn = diff(t[end-(k+2):end])
+        if all(hn.==hn[1])
+            maxd=interpolateHighestDerivative(t[end-(k+2):end],y[end-(k+2):end])
+            push!(errors,h^(k+2)*normy(maxd))
         end
-
-        # estimate for the order k+1
-        errors[k+1] = normy(phi[:,k+3])
     end
 
-    # return error estimates (this is ERK{M2,M1,,P1} from DASSL)
+    # return error estimates (this is roughly [ERKM2,ERKM1,ERK,ERKP1]
+    # from DASSL)
     return errors
 
 end
@@ -390,7 +386,7 @@ function stepper(ord      :: Int,
                  jd       :: JacData,
                  computejac :: Function,
                  wt,
-                 norm     :: Function,
+                 normy     :: Function,
                  maxorder :: Int)
 
     l        = length(y[1])        # the number of dependent variables
@@ -401,11 +397,20 @@ function stepper(ord      :: Int,
 
     t_next   = tk[end]+h_next
 
+    # I think there is an error in the book, the sum should be taken
+    # from j=1 to k+1 instead of j=1 to k
+    alphas = -sum([1/j for j=1:ord])
+
     if length(y) == 1
         # this is the first step, we initialize y0 and dy0 with
         # initial data provided by user
         dy0 = dy[1]
         y0  = y[1]+h_next*dy[1]
+        # We assume that dy[1] is given, so we can use Hermite
+        # interpolation to get a better approximation to the
+        # derivative at point y: dy=a*y+b=2(y-y[1])/h-dy[1]
+        a=2/h_next
+        b=-dy[1]-2*y[1]/h_next
     else
         # we use predictor to obtain the starting point for the
         # modified newton method
@@ -414,14 +419,9 @@ function stepper(ord      :: Int,
         # tuple (y0,dy0)
         dy0 = interpolateDerivativeAt(tk,yk,t_next)
         y0  = interpolateAt(tk,yk,t_next)
+        a=-alphas/h_next
+        b=dy0-a*y0
     end
-
-    # I think there is an error in the book, the sum should be taken
-    # from j=1 to k+1 instead of j=1 to k
-    alphas = -sum([1/j for j=1:ord])
-
-    a=-alphas/h_next
-    b=dy0-a*y0
 
     # delta for approximation of jacobian.  I removed the
     # sign(h_next*dy0) from the definition of delta because it was
@@ -436,7 +436,8 @@ function stepper(ord      :: Int,
     # if called, this function computes the jacobian of f_newton at
     # the point y0 (via first order finite differences or
     # user-supplied functions)
-    jac_new()=computejac(t_next,y0,a,b,delta)
+    # jac_new()=computejac(t_next,y0,a,b,delta)
+    jac_new()=computejac(t[end],y[end],a,b,delta)
 
     # we compute the corrected value "yc", updating the gradient if necessary
     (status,yc,jd)=corrector(jd,       # old coefficient a and jacobian
@@ -444,8 +445,7 @@ function stepper(ord      :: Int,
                              jac_new,  # this function is called when new jacobian is needed
                              y0,       # starting point for modified newton
                              f_newton, # we want to find zeroes of this function
-                             norm)     # the norm used to estimate error needs weights
-
+                             normy)     # the norm used to estimate error needs weights
 
     alpha = Array(eltype(t),ord+1)
 
@@ -467,7 +467,7 @@ function stepper(ord      :: Int,
 
     alpha0 = -sum(alpha[1:ord])
     M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
-    err::eltype(t) =  norm((yc-y0))*M
+    err::eltype(t) =  normy((yc-y0))*M
 
 
     # status<0 means the modified Newton method did not converge
@@ -486,7 +486,7 @@ function corrector{T}(jd       :: JacData,
                       jd_new   :: Function,
                       y0,
                       f_newton :: Function,
-                      norm     :: Function)
+                      normy     :: Function)
 
     # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -495,7 +495,7 @@ function corrector{T}(jd       :: JacData,
         # to compute a current jacobian
         jd = jd_new()
         # run the corrector
-        (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, norm)
+        (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, normy)
     else
         # old jacobian should give reasonable convergence
         c::T=2*jd.a/(a_new+jd.a) # factor "c" is used to speed up the
@@ -503,13 +503,13 @@ function corrector{T}(jd       :: JacData,
                                  # jacobian
 
         # reusing the old jacobian
-        (status,yc)=newton_iteration( x->(-c*(jd.jac\f_newton(x))), y0, norm)
+        (status,yc)=newton_iteration( x->(-c*(jd.jac\f_newton(x))), y0, normy)
 
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
             jd=jd_new()
             # run the corrector again
-            (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, norm)
+            (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, normy)
         end
     end
 
@@ -519,36 +519,36 @@ end
 
 
 # this function iterates f until it finds its fixed point, starting
-# from f(y0).  The result either satisfies norm(yn-f(yn))=0+... or is
+# from f(y0).  The result either satisfies normy(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
 function newton_iteration(f    :: Function,
                           y0,
-                          norm :: Function)
+                          normy :: Function)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
 
     delta::typeof(y0)=f(y0)
-    norm1::Float64=norm(delta)
+    norm1::Float64=normy(delta)
     yn=y0+delta
 
-    # after the first iteration the norm turned out to be very small,
+    # after the first iteration the normy turned out to be very small,
     # terminate and return the first correction step
 
-    ep    = eps(one(eltype(abs(y0)))) # this is the epsilon for type y0
+    ep    = eps(eltype(abs(y0))) # this is the epsilon for type y0
 
-    if norm1 < 10*ep
+    if norm1 < 100*ep*normy(y0)
         status=0
         return(status,yn)
     end
 
     # maximal number of iterations is set by dassl algorithm to 4
 
-    for i=1:3
+    for i=1:MAXIT
 
         delta=f(yn)
-        normn::Float64=norm(delta)
+        normn::Float64=normy(delta)
         rho=(normn/norm1)^(1/i)
         yn=yn+delta
 
@@ -672,8 +672,9 @@ function interpolateHighestDerivative(x::Vector,
         end
         p+=Li*y[i]
     end
-    return p
+    return factorial(n-1)*p
 end
+
 
 # compute jacobian using analytical formulas for dF/dy and dF/dy'
 # provided by the user
