@@ -63,5 +63,5 @@ facts("Testing minimal error tolerances") do
         end
 
     end
-    @fact tol => roughly(1e-19)
+    @fact tol => roughly(1e-15)
 end

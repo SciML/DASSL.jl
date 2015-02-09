@@ -123,7 +123,7 @@ function dasslStep{T<:Number}(F             :: Function,
                 shift!(dyout)
             end
 
-            produce(tout[end],yout[end],dyout[end],ord)
+            produce(tout[end],yout[end],dyout[end])
 
             # determine the new step size and order, including the current step
             (r,ord) = newStepOrder(tout,yout,normy,err,ord,num_fail,maxorder)
@@ -145,21 +145,18 @@ function dasslSolve(F, y0 :: Vector, tspan; dy0 = zero(y0), args...)
     tout  = Array(typeof(tspan[1]),1)
     yout  = Array(typeof(y0),1)
     dyout = Array(typeof(y0),1)
-    ordout = Array(Int,1)
     tout[1]  = tspan[1]
     yout[1]  = y0
     dyout[1] = dy0
-    ordout[1] = 1
-    for (t, y, dy,ord) in dasslIterator(F, y0, tspan[1]; dy0=dy0, tstop=tspan[end], args...)
+    for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0=dy0, tstop=tspan[end], args...)
         push!( tout,  t)
         push!( yout,  y)
         push!(dyout, dy)
-        push!(ordout, ord)
         if t >= tspan[end]
             break
         end
     end
-    return (tout,yout,dyout,ordout)
+    return (tout,yout,dyout)
 end
 
 # A scalar version of dasslSolve, implemented as a wrapper around dasslSolve
@@ -519,15 +516,15 @@ end
 # from f(y0).  The result either satisfies normy(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration(f    :: Function,
-                          y0,
-                          normy :: Function)
+function newton_iteration{T<:Number}(f     :: Function,
+                                     y0    :: Vector{T},
+                                     normy :: Function)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
 
     delta::typeof(y0)=f(y0)
-    norm1::Float64=normy(delta)
+    norm1::T=normy(delta)
     yn=y0+delta
 
     # after the first iteration the normy turned out to be very small,
@@ -545,7 +542,7 @@ function newton_iteration(f    :: Function,
     for i=1:MAXIT
 
         delta=f(yn)
-        normn::Float64=normy(delta)
+        normn::T=normy(delta)
         rho=(normn/norm1)^(1/i)
         yn=yn+delta
 
