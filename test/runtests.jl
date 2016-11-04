@@ -23,14 +23,14 @@ facts("Testing maxorder") do
         rerror = maximum(abs(yn-sol(tn))/abs(sol(tn)))
         nsteps = length(tn)
 
-        @fact aerror => less_than(2*nsteps*atol)
-        @fact rerror => less_than(2*nsteps*rtol)
+        @fact aerror --> less_than(2*nsteps*atol)
+        @fact rerror --> less_than(2*nsteps*rtol)
 
         # vector version
         (tnV,ynV,dynV)=DASSL.dasslSolve(F,[sol(0.0)], tspan, maxorder = order)
 
-        @fact  vcat(ynV...) => yn
-        @fact vcat(dynV...) => dyn
+        @fact  vcat(ynV...) --> yn
+        @fact vcat(dynV...) --> dyn
 
         # analytical jacobian version (vector)
         (tna,yna,dyna)=dasslSolve(F, [sol(0.0)], tspan, maxorder = order, Fy = Fy, Fdy = Fdy)
@@ -38,8 +38,8 @@ facts("Testing maxorder") do
         rerror = maximum(abs(map(first,yn)-sol(tn))/abs(sol(tn)))
         nsteps = length(tn)
 
-        @fact aerror => less_than(2*nsteps*atol)
-        @fact rerror => less_than(2*nsteps*rtol)
+        @fact aerror --> less_than(2*nsteps*atol)
+        @fact rerror --> less_than(2*nsteps*rtol)
     end
 end
 
@@ -63,5 +63,5 @@ facts("Testing minimal error tolerances") do
         end
 
     end
-    @fact tol => roughly(1e-15)
+    @fact tol --> roughly(1e-15)
 end

@@ -6,13 +6,13 @@ const MAXORDER = 6
 const MAXIT = 10
 
 type JacData
-    a   :: Real
+    a::Real
     jac # Jacobian matrix for the newton solver
 end
 
-function dasslStep{T<:Number}(F             :: Function,
-                              y0            :: Vector{T},
-                              tstart        :: Real;
+function dasslStep{T<:Number}(F,
+                              y0::AbstractVector{T},
+                              tstart::Real;
                               reltol   = 1e-3,
                               abstol   = 1e-5,
                               initstep = 1e-4,
@@ -141,7 +141,7 @@ dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
 
 
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
-function dasslSolve(F, y0 :: Vector, tspan; dy0 = zero(y0), args...)
+function dasslSolve(F, y0::AbstractVector, tspan; dy0 = zero(y0), args...)
     tout  = Array(typeof(tspan[1]),1)
     yout  = Array(typeof(y0),1)
     dyout = Array(typeof(y0),1)
@@ -160,19 +160,19 @@ function dasslSolve(F, y0 :: Vector, tspan; dy0 = zero(y0), args...)
 end
 
 # A scalar version of dasslSolve, implemented as a wrapper around dasslSolve
-function dasslSolve(F, y0 :: Number, tspan; args...)
+function dasslSolve(F, y0::Number, tspan; args...)
     (tout,yout,dyout) = dasslSolve(F,[y0],tspan; args...)
     return (tout,map(first,yout),map(first,dyout))
 end
 
 
-function newStepOrder(t         :: Vector,
-                      y         :: Vector,
-                      normy     :: Function,
+function newStepOrder(t::AbstractVector,
+                      y::AbstractVector,
+                      normy,
                       err,
-                      k         :: Int,
-                      num_fail  :: Int,
-                      maxorder  :: Int)
+                      k::Integer,
+                      num_fail::Integer,
+                      maxorder::Integer)
 
     if length(t) != length(y)
         error("incompatible size of y and t")
@@ -231,12 +231,12 @@ function newStepOrder(t         :: Vector,
 end
 
 
-function newStepOrderContinuous(t        :: Vector,
-                                y        :: Vector,
-                                normy    :: Function,
+function newStepOrderContinuous(t::AbstractVector,
+                                y::AbstractVector,
+                                normy,
                                 err,
-                                k        :: Int,
-                                maxorder :: Int)
+                                k::Integer,
+                                maxorder::Integer)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
@@ -332,10 +332,10 @@ end
 
 # here t is an array of times    t=[t_1, ..., t_n, t_{n+1}]
 # and y is an array of solutions y=[y_1, ..., y_n, y_{n+1}]
-function errorEstimates(t        :: Vector,
-                        y        :: Vector,
-                        normy    :: Function,
-                        k        :: Int)
+function errorEstimates(t::AbstractVector,
+                        y::AbstractVector,
+                        normy,
+                        k::Integer)
 
     nsteps = length(t)          # available steps (including counting
                                 # the new n+1'st step)
@@ -378,17 +378,17 @@ end
 # F encodes the DAE: F(t,y,y')=0
 # jd is a bunch of auxilary data saved between steps (jacobian and last coefficient 'a')
 # wt is a vector of weights of the norm
-function stepper(ord      :: Int,
-                 t        :: Vector,
-                 y        :: Vector,
-                 dy       :: Vector,
-                 h_next   :: Real,
-                 F        :: Function,
-                 jd       :: JacData,
-                 computejac :: Function,
+function stepper(ord::Integer,
+                 t::AbstractVector,
+                 y::AbstractVector,
+                 dy::AbstractVector,
+                 h_next::Real,
+                 F,
+                 jd::JacData,
+                 computejac,
                  wt,
-                 normy     :: Function,
-                 maxorder :: Int)
+                 normy,
+                 maxorder::Integer)
 
     l        = length(y[1])        # the number of dependent variables
 
@@ -475,12 +475,12 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T,Ty}(jd       :: JacData,
-                         a_new    :: T,
-                         jac_new  :: Function,
-                         y0       :: Vector{Ty},
-                         f_newton :: Function,
-                         normy    :: Function)
+function corrector{T,Ty}(jd::JacData,
+                         a_new::T,
+                         jac_new,
+                         y0::AbstractVector{Ty},
+                         f_newton,
+                         normy)
 
     # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -516,9 +516,9 @@ end
 # from f(y0).  The result either satisfies normy(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration{T<:Number}(f     :: Function,
-                                     y0    :: Vector{T},
-                                     normy :: Function)
+function newton_iteration{T<:Number}(f,
+                                     y0::AbstractVector{T},
+                                     normy)
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -580,8 +580,8 @@ function dassl_weights(y,reltol,abstol)
 end
 
 # returns the value of the interpolation polynomial at the point x0
-function interpolateAt{T<:Real}(x::Vector{T},
-                                y::Vector,
+function interpolateAt{T<:Real}(x::AbstractVector{T},
+                                y::AbstractVector,
                                 x0::T)
 
     if length(x)!=length(y)
@@ -608,8 +608,8 @@ end
 
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
-function interpolateDerivativeAt{T<:Real}(x::Vector{T},
-                                          y::Vector,
+function interpolateDerivativeAt{T<:Real}(x::AbstractVector{T},
+                                          y::AbstractVector,
                                           x0::T)
 
     if length(x)!=length(y)
@@ -645,8 +645,8 @@ end
 # if the interpolating polynomial is given as
 # p(x)=a_{k-1}*x^{k-1}+...a_1*x+a_0 then this function returns the
 # k-th derivative of p, i.e. (k-1)!*a_{k-1}
-function interpolateHighestDerivative(x::Vector,
-                                      y::Vector)
+function interpolateHighestDerivative(x::AbstractVector,
+                                      y::AbstractVector)
 
     if length(x)!=length(y)
         error("x and y have to be of the same size.")
