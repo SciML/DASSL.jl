@@ -1,7 +1,7 @@
 DASSL.jl
 ========
 
-[![Build Status](https://travis-ci.org/JuliaDiffEq/DASSL.jl.png)](https://travis-ci.org/JuliaDiffEq/DASSL.jl)
+[![Build Status](https://travis-ci.org/JuliaDiffEq/DASSL.jl.svg?branch=master)](https://travis-ci.org/JuliaDiffEq/DASSL.jl)
 [![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
 [![DASSL](http://pkg.julialang.org/badges/DASSL_0.5.svg)](http://pkg.julialang.org/?pkg=DASSL)
 
