@@ -6,4 +6,4 @@ julia:
   - 0.5
   - nightly
 after_success:
-  - if [ $JULIAVERSION = "julianightlies" ]; then julia -e 'cd(Pkg.dir("DASSL")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
+  - if [ $TRAVIS_JULIA_VERSION = "nightly" ]; then julia -e 'cd(Pkg.dir("DASSL")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
