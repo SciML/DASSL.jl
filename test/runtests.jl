@@ -65,3 +65,7 @@ facts("Testing minimal error tolerances") do
     end
     @fact tol --> roughly(1e-15)
 end
+
+facts("Testing common interface") do
+  include("common.jl")
+end

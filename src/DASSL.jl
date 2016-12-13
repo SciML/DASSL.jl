@@ -2,6 +2,13 @@ module DASSL
 
 export dasslIterator, dasslSolve
 
+using DiffEqBase
+import DiffEqBase: solve
+
+export dassl
+
+include("common.jl")
+
 const MAXORDER = 6
 const MAXIT = 10
 
