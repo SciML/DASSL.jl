@@ -14,10 +14,6 @@ function solve{uType,duType,tType,isinplace}(
     if callback != nothing
         error("DASSL is not compatible with callbacks.")
     end
-  
-    if prob.mass_matrix != I
-        error("This solver is not able to use mass matrices.")
-    end
 
     tspan = [prob.tspan[1],prob.tspan[2]]
 
