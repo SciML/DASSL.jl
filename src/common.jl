@@ -9,7 +9,8 @@ dassl(;maxorder = 6,factorize_jacobian = true) = dassl(maxorder,factorize_jacobi
 function solve{uType,duType,tType,isinplace}(
     prob::AbstractDAEProblem{uType,duType,tType,isinplace},
     alg::DASSLDAEAlgorithm,args...;timeseries_errors=true,
-    abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,kwargs...)
+    abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,
+    callback=nothing,kwargs...)
   
     if callback != nothing
         error("DASSL is not compatible with callbacks.")
