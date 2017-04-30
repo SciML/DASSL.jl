@@ -12,7 +12,7 @@ function solve{uType,duType,tType,isinplace}(
     abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,
     callback=nothing,kwargs...)
   
-    if callback != nothing
+    if callback != nothing || prob.callback != nothing
         error("DASSL is not compatible with callbacks.")
     end
 
