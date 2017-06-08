@@ -4,7 +4,8 @@ module DASSL
 
 export dasslIterator, dasslSolve
 
-using DiffEqBase
+using Reexport
+@reexport using DiffEqBase
 import DiffEqBase: solve
 
 export dassl
