@@ -12,6 +12,30 @@ differential equations.  To inastall a stable version run
 Pkg.add("DASSL")
 ```
 
+Common Interface Example
+------------------------
+
+This package is compatible with the JuliaDiffEq common solver interface which is documented in the [DifferentialEquations.jl documentation](http://docs.juliadiffeq.org/latest/). Following the [DAE Tutorial](http://docs.juliadiffeq.org/latest/tutorials/dae_example.html), one can use `dassl()` as follows:
+
+```julia
+using DASSL
+u0 = [1.0, 0, 0]
+du0 = [-0.04, 0.04, 0.0]
+tspan = (0.0,100000.0)
+
+function resrob(tres, y, yp, r)
+    r[1]  = -0.04*y[1] + 1.0e4*y[2]*y[3]
+    r[2]  = -r[1] - 3.0e7*y[2]*y[2] - yp[2]
+    r[1] -=  yp[1]
+    r[3]  =  y[1] + y[2] + y[3] - 1.0
+end
+
+prob = DAEProblem(resrob,u0,du0,tspan)    
+sol = solve(prob, dassl())
+```
+
+For more details on using this interface, [see the ODE tutorial](http://docs.juliadiffeq.org/latest/tutorials/ode_example.html). 
+
 Examples
 --------
 
