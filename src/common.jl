@@ -1,16 +1,16 @@
-abstract DASSLDAEAlgorithm <: AbstractODEAlgorithm
-immutable dassl <: DASSLDAEAlgorithm
+abstract type DASSLDAEAlgorithm <: AbstractODEAlgorithm end
+struct dassl <: DASSLDAEAlgorithm
   maxorder
   factorize_jacobian
 end
 
 dassl(;maxorder = 6,factorize_jacobian = true) = dassl(maxorder,factorize_jacobian)
 
-function solve{uType,duType,tType,isinplace}(
+function solve(
     prob::AbstractDAEProblem{uType,duType,tType,isinplace},
     alg::DASSLDAEAlgorithm,args...;timeseries_errors=true,
     abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,
-    callback=nothing,kwargs...)
+    callback=nothing,kwargs...) where {uType,duType,tType,isinplace}
 
     if callback != nothing || prob.callback != nothing
         error("DASSL is not compatible with callbacks.")
