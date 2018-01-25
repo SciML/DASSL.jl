@@ -11,7 +11,7 @@ function solve{uType,duType,tType,isinplace}(
     alg::DASSLDAEAlgorithm,args...;timeseries_errors=true,
     abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,
     callback=nothing,kwargs...)
-  
+
     if callback != nothing || prob.callback != nothing
         error("DASSL is not compatible with callbacks.")
     end
@@ -20,12 +20,13 @@ function solve{uType,duType,tType,isinplace}(
 
     #sizeu = size(prob.u0)
     #sizedu = size(prob.du0)
+    p = prob.p
 
     ### Fix inplace functions to the non-inplace version
     if isinplace
-      f = (t,u,du) -> (out = similar(u); prob.f(t,u,du,out); out)
+      f = (t,u,du) -> (out = similar(u); prob.f(out,du,u,p,t); out)
     else
-      f = prob.f
+      f = (t,u) -> prob.f(u,p,t)
     end
 
     ### Finishing Routine
