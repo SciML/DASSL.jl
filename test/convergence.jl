@@ -5,12 +5,12 @@ using DASSL
 # tuple of relative and absolute L^Inf norms of a difference of
 # analytic and numerical solutions.  The third element in the returned
 # touple is the time it took to obtain the numerical solution.
-function dasslTestConvergence{T<:Number}(F          :: Function,  # equation to solve
-                                         y0         :: Vector{T}, # initial data
-                                         tspan      :: Vector{T}, # time span of a solution
-                                         sol        :: Function,  # analytic solution, for comparison with numerical solution
-                                         rtol_range :: Vector{T}, # vector of relative tolerances
-                                         atol_range :: Vector{T}) # vector of absolute tolerances
+function dasslTestConvergence(F          :: Function,  # equation to solve
+                              y0         :: Vector{T}, # initial data
+                              tspan      :: Vector{T}, # time span of a solution
+                              sol        :: Function,  # analytic solution, for comparison with numerical solution
+                              rtol_range :: Vector{T}, # vector of relative tolerances
+                              atol_range :: Vector{T}) where T<:Number # vector of absolute tolerances
 
     if length(rtol_range) != length(atol_range)
         error("The table of relative errors and absolute errors should be of the same size.")
@@ -45,12 +45,12 @@ function dasslTestConvergence{T<:Number}(F          :: Function,  # equation to 
 end
 
 
-function dasslDrawConvergence{T<:Number}(F     :: Function,  # equation to solve
-                                         y0    :: Vector{T}, # initial data
-                                         tspan :: Vector{T}, # time span of a solution
-                                         sol   :: Function,  # analytic solution, for comparison with numerical solution
-                                         rtol  :: Vector{T}, # vector of relative tolerances
-                                         atol  :: Vector{T}) # vector of absolute tolerances
+function dasslDrawConvergence(F     :: Function,  # equation to solve
+                              y0    :: Vector{T}, # initial data
+                              tspan :: Vector{T}, # time span of a solution
+                              sol   :: Function,  # analytic solution, for comparison with numerical solution
+                              rtol  :: Vector{T}, # vector of relative tolerances
+                              atol  :: Vector{T}) where T<:Number # vector of absolute tolerances
 
     # run the dasslSolve to trigger the compilation
     dasslSolve(F,y0,tspan)
@@ -91,14 +91,14 @@ end
 # index-1 example
 #------------------------------------------------------------
 
-function F1{T<:Number}(t::T,y::Array{T,1},dy::Array{T,1})
+function F1(t::T,y::Array{T,1},dy::Array{T,1}) where T<:Number
     a=10.0
     [-dy[1]+(a-1/(2-t))*y[1]+(2-t)*a*y[3]+exp(t)*(3-t)/(2-t),
      -dy[2]+(1-a)/(t-2)*y[1]-y[2]+(a-1)*y[3]+2*exp(t),
      (t+2)*y[1]+(t^2-4)*y[2]-(t^2+t-2)*exp(t)]
 end
 
-function sol1{T<:Number}(t::T)
+function sol1(t::T) where T<:Number
     a=10.0
     [exp(t),
      exp(t),

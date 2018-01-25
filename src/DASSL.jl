@@ -15,27 +15,27 @@ include("common.jl")
 const MAXORDER = 6
 const MAXIT = 10
 
-type JacData
+mutable struct JacData
     a::Real
     jac # Jacobian matrix for the newton solver
 end
 
-function dasslStep{T<:Number}(F,
-                              y0::AbstractVector{T},
-                              tstart::Real;
-                              reltol   = 1e-3,
-                              abstol   = 1e-5,
-                              initstep = 1e-4,
-                              maxstep  = Inf,
-                              minstep  = 0,
-                              maxorder = MAXORDER,
-                              dy0      = zero(y0),
-                              tstop    = Inf,
-                              norm     = dassl_norm,
-                              weights  = dassl_weights,
-                              factorize_jacobian = true, # whether to store factorized version of jacobian
-                              jacobian = numerical_jacobian(F,reltol,abstol,weights), # computes the quantity F/dy+a*dF/dy'
-                              args...)
+function dasslStep(F,
+                   y0::AbstractVector{T},
+                   tstart::Real;
+                   reltol   = 1e-3,
+                   abstol   = 1e-5,
+                   initstep = 1e-4,
+                   maxstep  = Inf,
+                   minstep  = 0,
+                   maxorder = MAXORDER,
+                   dy0      = zero(y0),
+                   tstop    = Inf,
+                   norm     = dassl_norm,
+                   weights  = dassl_weights,
+                   factorize_jacobian = true, # whether to store factorized version of jacobian
+                   jacobian = numerical_jacobian(F,reltol,abstol,weights), # computes the quantity F/dy+a*dF/dy'
+                   args...) where T<:Number
 
     n  = length(y0)
     jd = JacData(zero(tstart),zeros(T,n,n)) # generate a dummy
@@ -485,12 +485,12 @@ end
 # returns the corrected value yc and status.  If needed it updates
 # the jacobian g_old and a_old.
 
-function corrector{T,Ty}(jd::JacData,
-                         a_new::T,
-                         jac_new,
-                         y0::AbstractVector{Ty},
-                         f_newton,
-                         normy)
+function corrector(jd::JacData,
+                   a_new::T,
+                   jac_new,
+                   y0::AbstractVector{Ty},
+                   f_newton,
+                   normy) where {T,Ty}
 
     # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -526,9 +526,9 @@ end
 # from f(y0).  The result either satisfies normy(yn-f(yn))=0+... or is
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
-function newton_iteration{T<:Number}(f,
-                                     y0::AbstractVector{T},
-                                     normy)
+function newton_iteration(f,
+                          y0::AbstractVector{T},
+                          normy) where T<:Number
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -590,9 +590,9 @@ function dassl_weights(y,reltol,abstol)
 end
 
 # returns the value of the interpolation polynomial at the point x0
-function interpolateAt{T<:Real}(x::AbstractVector{T},
-                                y::AbstractVector,
-                                x0::T)
+function interpolateAt(x::AbstractVector{T},
+                       y::AbstractVector,
+                       x0::T) where T<:Real
 
     if length(x)!=length(y)
         error("x and y have to be of the same size.")
@@ -618,9 +618,9 @@ end
 
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
-function interpolateDerivativeAt{T<:Real}(x::AbstractVector{T},
-                                          y::AbstractVector,
-                                          x0::T)
+function interpolateDerivativeAt(x::AbstractVector{T},
+                                 y::AbstractVector,
+                                 x0::T) where T<:Real
 
     if length(x)!=length(y)
         error("x and y have to be of the same size.")
