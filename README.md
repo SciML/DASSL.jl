@@ -23,7 +23,7 @@ u0 = [1.0, 0, 0]
 du0 = [-0.04, 0.04, 0.0]
 tspan = (0.0,100000.0)
 
-function resrob(tres, y, yp, r)
+function resrob(r,yp,y,p,t)
     r[1]  = -0.04*y[1] + 1.0e4*y[2]*y[3]
     r[2]  = -r[1] - 3.0e7*y[2]*y[2] - yp[2]
     r[1] -=  yp[1]
