@@ -22,7 +22,8 @@ mutable struct JacData
     jac # Jacobian matrix for the newton solver
 end
 
-function dasslStep(F,
+function dasslStep(channel,
+                   F,
                    y0::AbstractVector{T},
                    tstart::Real;
                    reltol   = 1e-3,
@@ -47,9 +48,9 @@ function dasslStep(F,
     ord      = 1                # initial method order
     tout     = [tstart]         # initial time
     h        = initstep         # current step size
-    yout     = Array{typeof(y0)}(1)
+    yout     = Array{typeof(y0)}(undef,1)
     yout[1]  = y0
-    dyout    = Array{typeof(y0)}(1)
+    dyout    = Array{typeof(y0)}(undef,1)
     dyout[1] = dy0              # initial guess for dy0
     num_rejected = 0            # number of rejected steps
     num_fail = 0                # number of consecutive failures
@@ -130,12 +131,12 @@ function dasslStep(F,
 
             # remove old results
             if length(tout) > ord+3
-                shift!(tout)
-                shift!(yout)
-                shift!(dyout)
+                popfirst!(tout)
+                popfirst!(yout)
+                popfirst!(dyout)
             end
 
-            produce(tout[end],yout[end],dyout[end])
+            push!(channel,(tout[end],yout[end],dyout[end]))
 
             # determine the new step size and order, including the current step
             (r,ord) = newStepOrder(tout,yout,normy,err,ord,num_fail,maxorder)
@@ -149,7 +150,7 @@ end
 
 
 # the iterator version of the dasslSolve
-dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
+dasslIterator(F, y0, t0; args...) = Channel((channel)->dasslStep(channel,F, y0, t0; args...))
 
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
 function dasslSolve(F, y0::AbstractVector, tspan; dy0 = zero(y0), args...)
@@ -471,7 +472,7 @@ function stepper(ord::Integer,
     alpha[ord+1] = h_next/(t_next-t0)
 
     alpha0 = -sum(alpha[1:ord])
-    M      =  max(alpha[ord+1],abs(alpha[ord+1]+alphas-alpha0))
+    M      =  max(alpha[ord+1],abs.(alpha[ord+1]+alphas-alpha0))
     err::eltype(t) =  normy((yc-y0))*M
 
 
@@ -690,7 +691,7 @@ function numerical_jacobian(F,reltol,abstol,weights)
         # delta for approximation of jacobian.  I removed the
         # sign(h_next*dy0) from the definition of delta because it was
         # causing trouble when dy0==0 (which happens for ord==1)
-        edelta  = diagm(max.(abs.(y),abs.(h*dy),wt)*sqrt(ep))
+        edelta  = diagm(0=>max.(abs.(y),abs.(h*dy),wt)*sqrt(ep))
 
         b=dy-a*y
         f(y1) = F(t,y1,a*y1+b)

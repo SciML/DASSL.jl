@@ -54,6 +54,6 @@ function solve(
     end
     =#
 
-    build_solution(prob,alg,ts,timeseries,
+    DiffEqBase.build_solution(prob,alg,ts,timeseries,
                       timeseries_errors = timeseries_errors)
 end

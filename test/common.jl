@@ -1,4 +1,6 @@
 using DiffEqProblemLibrary, DiffEqBase, DASSL
+using DiffEqProblemLibrary.DAEProblemLibrary: importdaeproblems; importdaeproblems()
+using DiffEqProblemLibrary.DAEProblemLibrary: prob_dae_resrob
 
 prob = prob_dae_resrob
 
