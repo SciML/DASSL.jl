@@ -3,7 +3,6 @@ DASSL.jl
 
 [![Build Status](https://travis-ci.org/JuliaDiffEq/DASSL.jl.svg?branch=master)](https://travis-ci.org/JuliaDiffEq/DASSL.jl)
 [![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
-[![DASSL](http://pkg.julialang.org/badges/DASSL_0.5.svg)](http://pkg.julialang.org/?pkg=DASSL)
 
 This is an implementation of DASSL algorithm for solving algebraic
 differential equations.  To inastall a stable version run
@@ -34,7 +33,7 @@ prob = DAEProblem(resrob,u0,du0,tspan)
 sol = solve(prob, dassl())
 ```
 
-For more details on using this interface, [see the ODE tutorial](http://docs.juliadiffeq.org/latest/tutorials/ode_example.html). 
+For more details on using this interface, [see the ODE tutorial](http://docs.juliadiffeq.org/latest/tutorials/ode_example.html).
 
 Examples
 --------

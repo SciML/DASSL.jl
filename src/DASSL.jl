@@ -6,6 +6,8 @@ export dasslIterator, dasslSolve
 
 using Reexport
 @reexport using DiffEqBase
+using LinearAlgebra
+
 import DiffEqBase: solve
 
 export dassl
@@ -45,9 +47,9 @@ function dasslStep(F,
     ord      = 1                # initial method order
     tout     = [tstart]         # initial time
     h        = initstep         # current step size
-    yout     = Array(typeof(y0),1)
+    yout     = Array{typeof(y0)}(1)
     yout[1]  = y0
-    dyout    = Array(typeof(y0),1)
+    dyout    = Array{typeof(y0)}(1)
     dyout[1] = dy0              # initial guess for dy0
     num_rejected = 0            # number of rejected steps
     num_fail = 0                # number of consecutive failures
@@ -149,12 +151,11 @@ end
 # the iterator version of the dasslSolve
 dasslIterator(F, y0, t0; args...) = Task(()->dasslStep(F, y0, t0; args...))
 
-
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
 function dasslSolve(F, y0::AbstractVector, tspan; dy0 = zero(y0), args...)
-    tout  = Array(typeof(tspan[1]),1)
-    yout  = Array(typeof(y0),1)
-    dyout = Array(typeof(y0),1)
+    tout  = Array{typeof(tspan[1])}(undef,1)
+    yout  = Array{typeof(y0)}(undef,1)
+    dyout = Array{typeof(y0)}(undef,1)
     tout[1]  = tspan[1]
     yout[1]  = y0
     dyout[1] = dy0
@@ -451,7 +452,7 @@ function stepper(ord::Integer,
                              f_newton, # we want to find zeroes of this function
                              normy)     # the norm used to estimate error needs weights
 
-    alpha = Array(eltype(t),ord+1)
+    alpha = Array{eltype(t)}(undef,ord+1)
 
     for i = 1:ord
         alpha[i] = h_next/(t_next-t[end-i+1])
@@ -540,7 +541,7 @@ function newton_iteration(f,
     # after the first iteration the normy turned out to be very small,
     # terminate and return the first correction step
 
-    ep    = eps(eltype(abs(y0))) # this is the epsilon for type y0
+    ep    = eps(eltype(abs.(y0))) # this is the epsilon for type y0
 
     if norm1 < 100*ep*normy(y0)
         status=0
@@ -586,7 +587,7 @@ function dassl_norm(v, wt)
 end
 
 function dassl_weights(y,reltol,abstol)
-    reltol*abs(y).+abstol
+    @. reltol*abs(y)+abstol
 end
 
 # returns the value of the interpolation polynomial at the point x0
@@ -689,13 +690,13 @@ function numerical_jacobian(F,reltol,abstol,weights)
         # delta for approximation of jacobian.  I removed the
         # sign(h_next*dy0) from the definition of delta because it was
         # causing trouble when dy0==0 (which happens for ord==1)
-        edelta  = diagm(max(abs(y),abs(h*dy),wt)*sqrt(ep))
+        edelta  = diagm(max.(abs.(y),abs.(h*dy),wt)*sqrt(ep))
 
         b=dy-a*y
         f(y1) = F(t,y1,a*y1+b)
 
         n   = length(y)
-        jac = Array(eltype(y),n,n)
+        jac = Array{eltype(y)}(undef,n,n)
         for i=1:n
             jac[:,i]=(f(y+edelta[:,i])-f(y))/edelta[i,i]
         end

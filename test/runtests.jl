@@ -1,8 +1,6 @@
-using DASSL
-using Base.Test
-using FactCheck
+using DASSL, Test
 
-facts("Testing maxorder") do
+@testset "Testing maxorder" begin
 
     F(t,y,dy)=(dy+y.^2)
     Fy(t,y,dy)=diagm(2y)
@@ -23,14 +21,14 @@ facts("Testing maxorder") do
         rerror = maximum(abs(yn-sol(tn))./abs(sol(tn)))
         nsteps = length(tn)
 
-        @fact aerror --> less_than(2*nsteps*atol)
-        @fact rerror --> less_than(2*nsteps*rtol)
+        @test aerror < (2*nsteps*atol)
+        @test rerror < (2*nsteps*rtol)
 
         # vector version
         (tnV,ynV,dynV)=DASSL.dasslSolve(F,[sol(0.0)], tspan, maxorder = order)
 
-        @fact  vcat(ynV...) --> yn
-        @fact vcat(dynV...) --> dyn
+        @test  vcat(ynV...) == yn
+        @test  vcat(dynV...) == dyn
 
         # analytical jacobian version (vector)
         (tna,yna,dyna)=dasslSolve(F, [sol(0.0)], tspan, maxorder = order, Fy = Fy, Fdy = Fdy)
@@ -38,12 +36,12 @@ facts("Testing maxorder") do
         rerror = maximum(abs(map(first,yn)-sol(tn))./abs(sol(tn)))
         nsteps = length(tn)
 
-        @fact aerror --> less_than(2*nsteps*atol)
-        @fact rerror --> less_than(2*nsteps*rtol)
+        @test aerror < (2*nsteps*atol)
+        @test rerror < (2*nsteps*rtol)
     end
 end
 
-facts("Testing minimal error tolerances") do
+@testset "Testing minimal error tolerances") begin
     eps=1e-6
     # van der Pol equation
     Fvdp(t,y,dy)=([dy[1]+y[2],
@@ -66,6 +64,6 @@ facts("Testing minimal error tolerances") do
     @fact tol --> roughly(1e-15)
 end
 
-facts("Testing common interface") do
+@testset "Testing common interface" begin
   include("common.jl")
 end
