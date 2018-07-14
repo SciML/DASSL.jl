@@ -1,4 +1,4 @@
-abstract type DASSLDAEAlgorithm <: AbstractODEAlgorithm end
+abstract type DASSLDAEAlgorithm <: DiffEqBase.AbstractDAEAlgorithm end
 struct dassl <: DASSLDAEAlgorithm
   maxorder
   factorize_jacobian
@@ -7,10 +7,12 @@ end
 dassl(;maxorder = 6,factorize_jacobian = true) = dassl(maxorder,factorize_jacobian)
 
 function solve(
-    prob::AbstractDAEProblem{uType,duType,tType,isinplace},
+    prob::DiffEqBase.AbstractDAEProblem{uType,duType,tupType,isinplace},
     alg::DASSLDAEAlgorithm,args...;timeseries_errors=true,
     abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,
-    callback=nothing,kwargs...) where {uType,duType,tType,isinplace}
+    callback=nothing,kwargs...) where {uType,duType,tupType,isinplace}
+
+    tType = eltype(tupType)
 
     if callback != nothing || prob.callback != nothing
         error("DASSL is not compatible with callbacks.")
@@ -52,6 +54,6 @@ function solve(
     end
     =#
 
-    build_solution(prob,alg,ts,timeseries,
+    DiffEqBase.build_solution(prob,alg,ts,timeseries,
                       timeseries_errors = timeseries_errors)
 end
