@@ -57,7 +57,7 @@ function dasslStep(channel,
 
     # wrapper around the jacobian function
     if factorize_jacobian
-        computejac = (t,y,dy,a) -> Base.factorize(jacobian(t,y,dy,a))
+        computejac = (t,y,dy,a) -> LinearAlgebra.factorize(jacobian(t,y,dy,a))
     else
         computejac = jacobian
     end
