@@ -29,7 +29,7 @@ function resrob(r,yp,y,p,t)
     r[3]  =  y[1] + y[2] + y[3] - 1.0
 end
 
-prob = DAEProblem(resrob,u0,du0,tspan)    
+prob = DAEProblem(resrob,du0,u0,tspan)  
 sol = solve(prob, dassl())
 ```
 
