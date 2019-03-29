@@ -5,7 +5,7 @@ DASSL.jl
 [![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
 
 This is an implementation of DASSL algorithm for solving algebraic
-differential equations.  To inastall a stable version run
+differential equations.  To install a stable version run
 
 ```
 Pkg.add("DASSL")
