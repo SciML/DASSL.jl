@@ -9,7 +9,6 @@ using Reexport
 using LinearAlgebra
 
 import DiffEqBase: solve
-
 export dassl
 
 include("common.jl")
@@ -18,6 +17,11 @@ const MAXORDER = 6
 const MAXIT = 10
 
 mutable struct JacData
+    a::Real
+    jac # Jacobian matrix for the newton solver
+end
+
+mutable struct SolData
     a::Real
     jac # Jacobian matrix for the newton solver
 end
@@ -39,7 +43,7 @@ function dasslStep(channel,
                    factorize_jacobian = true, # whether to store factorized version of jacobian
                    jacobian = numerical_jacobian(F,reltol,abstol,weights), # computes the quantity F/dy+a*dF/dy'
                    args...) where T<:Number
-
+    println("args:", reltol, " ", abstol, " ", minstep, " ", initstep, " ", dy0, "\n")
     n  = length(y0)
     jd = JacData(zero(tstart),zeros(T,n,n)) # generate a dummy
                                    # jacobian, it will be replaced by
@@ -54,7 +58,7 @@ function dasslStep(channel,
     dyout[1] = dy0              # initial guess for dy0
     num_rejected = 0            # number of rejected steps
     num_fail = 0                # number of consecutive failures
-
+    jac = jacobian
     # wrapper around the jacobian function
     if factorize_jacobian
         computejac = (t,y,dy,a) -> LinearAlgebra.factorize(jacobian(t,y,dy,a))
@@ -65,6 +69,7 @@ function dasslStep(channel,
     # This is the trick to improve on the initial guess for
     # y0.  Basically we run a one iteration of stepper and use the
     # result as the initial derivative
+
     (_,_,_,dyout[1],_)=stepper(1,tout,yout,dyout,10*eps(one(tstart)),F,jd,computejac,weights(y0,1,1),v->norm(v,weights(y0,1,1)),1)
 
     while tout[end] < tstop
@@ -73,17 +78,18 @@ function dasslStep(channel,
         h = min(h,maxstep,tstop-tout[end])
 
         if h < hmin
-            throw(DomainError("Stepsize too small (h=$h at t=$(tout[end])."))
-            break
+            println("Stepsize too small (h=$h at t=$(tout[end]).")
+            h = hmin
         elseif num_fail >= -2/3*log(eps(one(tstart)))
-            throw(DomainError("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end])."))
+            println("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]).")
             break
         end
 
         # error weights
         wt = weights(yout[end],reltol,abstol)
         normy(v) = norm(v,wt)
-
+        println("h=", h, ", hmin=", hmin)
+        println("error weights")
         (status,err,yn,dyn,jd)=stepper(ord,tout,yout,dyout,h,F,jd,computejac,wt,normy,maxorder)
 
         if status < 0
@@ -364,7 +370,11 @@ function errorEstimates(t::AbstractVector,
         # @todo can this be optimized by inlining the body of
         # interpolateHighestDerivative?
         maxd=interpolateHighestDerivative(t[end-(i+1):end],y[end-(i+1):end])
+        println("maxd =", maxd, "\n")
         errors[i]=h^(i+1)*normy(maxd)
+        if isnan(normy(maxd)) || normy(maxd)==Inf
+            #throw(DomainError(maxd, "argument must be number"))
+        end
     end
 
     # compute the estimate the k+1 order only if all the steps were
@@ -373,7 +383,11 @@ function errorEstimates(t::AbstractVector,
         hn = diff(t[end-(k+2):end])
         if all(hn.==hn[1])
             maxd=interpolateHighestDerivative(t[end-(k+2):end],y[end-(k+2):end])
+            println("maxd =", maxd, "\n")
             push!(errors,h^(k+2)*normy(maxd))
+            if isnan(normy(maxd)) || normy(maxd)==Inf
+                #throw(DomainError(maxd, "argument must be number"))
+            end
         end
     end
 
@@ -390,7 +404,7 @@ end
 # F encodes the DAE: F(t,y,y')=0
 # jd is a bunch of auxilary data saved between steps (jacobian and last coefficient 'a')
 # wt is a vector of weights of the norm
-function stepper(ord::Integer,
+function  stepper(ord::Integer,
                  t::AbstractVector,
                  y::AbstractVector,
                  dy::AbstractVector,
@@ -403,7 +417,7 @@ function stepper(ord::Integer,
                  maxorder::Integer)
 
     l        = length(y[1])        # the number of dependent variables
-
+    println("h_next = ", h_next, "\n")
     # @todo this should be the view of the tail of the arrays t and y
     tk = t[end-ord+1:end]
     yk = y[end-ord+1:end]
@@ -438,6 +452,7 @@ function stepper(ord::Integer,
 
     # f_newton is supplied to the modified Newton method.  Zeroes of
     # f_newton give the corrected value of the next step "yc"
+
     f_newton(yc)=F(t_next,yc,a*yc+b)
 
     # if called, this function computes the jacobian of f_newton at
@@ -473,9 +488,14 @@ function stepper(ord::Integer,
 
     alpha0 = -sum(alpha[1:ord])
     M      =  max(alpha[ord+1],abs.(alpha[ord+1]+alphas-alpha0))
+    println("yc = ", yc, "\n")
+    println("y0 = ", y0, "\n")
+    println("M = ", M, "\n")
     err::eltype(t) =  normy((yc-y0))*M
-
-
+    println("err = ", err, "\n")
+    if isnan(normy((yc-y0))) || normy((yc-y0))==Inf
+        #throw(DomainError((yc-y0), "argument must be number"))
+    end
     # status<0 means the modified Newton method did not converge
     # err is the local error estimate from taking the step
     # yc is the estimated value at the next step
@@ -493,13 +513,15 @@ function corrector(jd::JacData,
                    y0::AbstractVector{Ty},
                    f_newton,
                    normy) where {T,Ty}
-
+    println("JD", jd.jac, "\n")
     # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
     if abs((jd.a-a_new)/(jd.a+a_new)) > 1/4
         # old jacobian wouldn't give fast enough convergence, we have
         # to compute a current jacobian
         jd = JacData(a_new,jac_new())
+        println("new JD", jd.jac, "\n")
+
         # run the corrector
         (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, normy)
     else
@@ -514,6 +536,7 @@ function corrector(jd::JacData,
         if status < 0
             # the corrector did not converge, so we recompute jacobian and try again
             jd = JacData(a_new,jac_new())
+            println("new JD far", jd.jac, "\n")
             # run the corrector again
             (status,yc)=newton_iteration( x->(-(jd.jac\f_newton(x))), y0, normy)
         end
@@ -531,12 +554,17 @@ end
 function newton_iteration(f,
                           y0::AbstractVector{T},
                           normy) where T<:Number
-
+    println("newton iteration")
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
 
     delta::typeof(y0)=f(y0)
+    if (isnan(delta[1]) || isnan(delta[2]))
+        println("delta = ", delta, ", y0=", y0, "\n")
+        ##throw(ErrorException("bad delta"))
+    end
     norm1::T=normy(delta)
+
     yn=y0+delta
 
     # after the first iteration the normy turned out to be very small,
@@ -554,10 +582,16 @@ function newton_iteration(f,
     for i=1:MAXIT
 
         delta=f(yn)
+        if (isnan(delta[1]) || isnan(delta[2]))
+            println("delta = ", delta, ", y0=", y0, "\n")
+            #throw(ErrorException("bad delta"))
+        end
         normn::T=normy(delta)
         rho=(normn/norm1)^(1/i)
         yn=yn+delta
-
+        if isnan(normn) || normn==Inf
+            #throw(DomainError(delta, "argument must be number"))
+        end
         # iteration failed to converge
 
         if rho > 9/10
@@ -582,9 +616,23 @@ function newton_iteration(f,
     return(status,y0)
 end
 
+function clear(x)
+    for i = eachindex(x)
+        if isnan(x[i])
+            x[i] = zero(x[i])
+        end
+        if x[i] == Inf
+            x[i] = 1000*one(x[i])
+        end
+        if x[i] == -Inf
+            x[i] = -1000*one(x[i])
+        end
+    end
+end
 
 function dassl_norm(v, wt)
-    norm(v./wt)/sqrt(length(v))
+    #clear(v)
+    nnorm = norm(v./wt)/sqrt(length(v))
 end
 
 function dassl_weights(y,reltol,abstol)
@@ -674,6 +722,7 @@ function interpolateHighestDerivative(x::AbstractVector,
                 continue
             else
                 Li*=1/(x[i]-x[j])
+                println("Li =", Li, ", ",  x[i], ", ", x[j], "\n")
             end
         end
         p+=Li*y[i]
@@ -691,13 +740,14 @@ function numerical_jacobian(F,reltol,abstol,weights)
         # delta for approximation of jacobian.  I removed the
         # sign(h_next*dy0) from the definition of delta because it was
         # causing trouble when dy0==0 (which happens for ord==1)
-        edelta  = diagm(0=>max.(abs.(y),abs.(h*dy),wt)*sqrt(ep))
-
+        edelta  = diagm(0=>max.(abs.(y),abs.(h*dy),wt)*ep)
+        println("edelta = ", edelta)
         b=dy-a*y
-        f(y1) = F(t,y1,a*y1+b)
+        f(y1) = F(t,y1,a*y+b)
 
         n   = length(y)
         jac = Array{eltype(y)}(undef,n,n)
+        println("y, a, b, ay+b, f(Y), f(dy) ", y, ", ", a, ", ", b, ", ", a*y+b, ", ", f(y), ", ", f(y+edelta[:,1])-f(y), ", ", f(y+edelta[:,2])-f(y))
         for i=1:n
             jac[:,i]=(f(y+edelta[:,i])-f(y))/edelta[i,i]
         end
