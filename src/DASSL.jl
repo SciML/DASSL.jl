@@ -73,10 +73,10 @@ function dasslStep(channel,
         h = min(h,maxstep,tstop-tout[end])
 
         if h < hmin
-            info("Stepsize too small (h=$h at t=$(tout[end]).")
+            throw(DomainError("Stepsize too small (h=$h at t=$(tout[end])."))
             break
         elseif num_fail >= -2/3*log(eps(one(tstart)))
-            info("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]).")
+            throw(ErrorException("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end])."))
             break
         end
 

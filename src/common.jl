@@ -33,12 +33,13 @@ function solve(
 
     ### Finishing Routine
 
-    ts,timeseries = dasslSolve(f,prob.u0,tspan,
+    ts,timeseries,dus = dasslSolve(f,prob.u0,tspan,
                                 abstol=abstol,
                                 reltol=reltol,
                                 maxstep=dtmax,
                                 minstep=dtmin,
                                 initstep=dt,
+                                dy0 = prob.du0,
                                 maxorder=alg.maxorder,
                                 factorize_jacobian=alg.factorize_jacobian)
     #=
@@ -53,7 +54,6 @@ function solve(
         end
     end
     =#
-
-    DiffEqBase.build_solution(prob,alg,ts,timeseries,
+    DiffEqBase.build_solution(prob,alg,ts,timeseries,du=dus,
                       timeseries_errors = timeseries_errors)
 end
