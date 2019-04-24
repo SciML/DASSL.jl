@@ -1,29 +1,17 @@
 abstract type DASSLDAEAlgorithm <: DiffEqBase.AbstractDAEAlgorithm end
 struct dassl <: DASSLDAEAlgorithm
-    reltol
-    abstol
-    initstep
-    maxstep
-    minstep
-    maxorder
-    factorize_jacobian
+  maxorder
+  factorize_jacobian
 end
 
-dassl(;
-    reltol   = nothing,
-    abstol   = NaN,
-    dt = NaN,
-    dtmax  = NaN,
-    dtmin  = NaN,
-    maxorder = 6,
-    factorize_jacobian = true) = dassl(reltol, abstol, dt, dtmax, dtmin, maxorder, factorize_jacobian)
+dassl(;maxorder = 6,factorize_jacobian = true) = dassl(maxorder,factorize_jacobian)
 
 function solve(
     prob::DiffEqBase.AbstractDAEProblem{uType,duType,tupType,isinplace},
     alg::DASSLDAEAlgorithm,args...;timeseries_errors=true,
-    abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf, maxorder=6, factorize_jacobian=true,
+    abstol=1e-5,reltol=1e-3,dt = 1e-4, dtmin = 0.0, dtmax = Inf,
     callback=nothing,kwargs...) where {uType,duType,tupType,isinplace}
-    alg = dassl(reltol, abstol, dt, dtmax, dtmin, maxorder, factorize_jacobian)
+
     tType = eltype(tupType)
 
     if callback != nothing || prob.callback != nothing
@@ -66,7 +54,6 @@ function solve(
         end
     end
     =#
-    #println("timeseries = $timeseries, dus = $dus")
     DiffEqBase.build_solution(prob,alg,ts,timeseries,du=dus,
                       timeseries_errors = timeseries_errors)
 end
