@@ -6,6 +6,7 @@ version = "2.4.0"
 [deps]
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Requires = "ae029012-a4dd-5104-9daa-d747884805df"
 
 [compat]
