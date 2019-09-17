@@ -42,6 +42,8 @@ function solve(
                                 dy0 = prob.du0,
                                 maxorder=alg.maxorder,
                                 factorize_jacobian=alg.factorize_jacobian)
+
+    println("dus = $dus")
     #=
     timeseries = Vector{uType}(0)
     if typeof(prob.u0)<:Number
@@ -54,6 +56,6 @@ function solve(
         end
     end
     =#
-    DiffEqBase.build_solution(prob,alg,ts,timeseries,du=dus,
+    DiffEqBase.build_solution(prob,alg,ts,timeseries, dus;
                       timeseries_errors = timeseries_errors)
 end
