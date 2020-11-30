@@ -1,7 +1,7 @@
 DASSL.jl
 ========
 
-[![Build Status](https://travis-ci.org/JuliaDiffEq/DASSL.jl.svg?branch=master)](https://travis-ci.org/JuliaDiffEq/DASSL.jl)
+[![Build Status](https://github.com/SciML/DASSL.jl/workflows/CI/badge.svg)](https://github.com/SciML/DASSL.jl/actions?query=workflow%3ACI)
 [![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
 
 This is an implementation of DASSL algorithm for solving algebraic
