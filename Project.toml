@@ -1,7 +1,7 @@
 name = "DASSL"
 uuid = "e993076c-0cfd-5d6b-a1ac-36489fdf7917"
 authors = ["Chris Rackauckas <accounts@chrisrackauckas.com>"]
-version = "2.6.0"
+version = "2.6.1"
 
 [deps]
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
