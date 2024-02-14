@@ -23,22 +23,22 @@ mutable struct JacData
 end
 
 function dasslStep(channel,
-                   F,
-                   y0::AbstractVector{T},
-                   tstart::Real;
-                   reltol = 1e-3,
-                   abstol = 1e-5,
-                   initstep = 1e-4,
-                   maxstep = Inf,
-                   minstep = 0,
-                   maxorder = MAXORDER,
-                   dy0 = zero(y0),
-                   tstop = Inf,
-                   norm = dassl_norm,
-                   weights = dassl_weights,
-                   factorize_jacobian = true, # whether to store factorized version of jacobian
-                   jacobian = numerical_jacobian(F, reltol, abstol, weights), # computes the quantity F/dy+a*dF/dy'
-                   args...) where {T <: Number}
+        F,
+        y0::AbstractVector{T},
+        tstart::Real;
+        reltol = 1e-3,
+        abstol = 1e-5,
+        initstep = 1e-4,
+        maxstep = Inf,
+        minstep = 0,
+        maxorder = MAXORDER,
+        dy0 = zero(y0),
+        tstop = Inf,
+        norm = dassl_norm,
+        weights = dassl_weights,
+        factorize_jacobian = true, # whether to store factorized version of jacobian
+        jacobian = numerical_jacobian(F, reltol, abstol, weights), # computes the quantity F/dy+a*dF/dy'
+        args...) where {T <: Number}
     n = length(y0)
     jd = JacData(zero(tstart), zeros(T, n, n)) # generate a dummy
     # jacobian, it will be replaced by
@@ -65,8 +65,8 @@ function dasslStep(channel,
     # y0.  Basically we run a one iteration of stepper and use the
     # result as the initial derivative
     (_, _, _, dyout[1], _) = stepper(1, tout, yout, dyout, 10 * eps(one(tstart)), F, jd,
-                                     computejac, weights(y0, 1, 1),
-                                     v -> norm(v, weights(y0, 1, 1)), 1)
+        computejac, weights(y0, 1, 1),
+        v -> norm(v, weights(y0, 1, 1)), 1)
 
     while tout[end] < tstop
         hmin = max(4 * eps(one(tstart)), minstep)
@@ -85,7 +85,7 @@ function dasslStep(channel,
         normy(v) = norm(v, wt)
 
         (status, err, yn, dyn, jd) = stepper(ord, tout, yout, dyout, h, F, jd, computejac,
-                                             wt, normy, maxorder)
+            wt, normy, maxorder)
 
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
@@ -180,12 +180,12 @@ function dasslSolve(F, y0::Number, tspan; args...)
 end
 
 function newStepOrder(t::AbstractVector,
-                      y::AbstractVector,
-                      normy,
-                      err,
-                      k::Integer,
-                      num_fail::Integer,
-                      maxorder::Integer)
+        y::AbstractVector,
+        normy,
+        err,
+        k::Integer,
+        num_fail::Integer,
+        maxorder::Integer)
     if length(t) != length(y)
         error("incompatible size of y and t")
     end
@@ -241,11 +241,11 @@ function newStepOrder(t::AbstractVector,
 end
 
 function newStepOrderContinuous(t::AbstractVector,
-                                y::AbstractVector,
-                                normy,
-                                err,
-                                k::Integer,
-                                maxorder::Integer)
+        y::AbstractVector,
+        normy,
+        err,
+        k::Integer,
+        maxorder::Integer)
 
     # compute the error estimates of methods of order k-2, k-1, k and
     # (if possible) k+1
@@ -334,9 +334,9 @@ end
 # here t is an array of times    t=[t_1, ..., t_n, t_{n+1}]
 # and y is an array of solutions y=[y_1, ..., y_n, y_{n+1}]
 function errorEstimates(t::AbstractVector,
-                        y::AbstractVector,
-                        normy,
-                        k::Integer)
+        y::AbstractVector,
+        normy,
+        k::Integer)
     nsteps = length(t)          # available steps (including counting
     # the new n+1'st step)
     h = t[end] - t[end - 1]        # current step size
@@ -361,7 +361,7 @@ function errorEstimates(t::AbstractVector,
         hn = diff(t[(end - (k + 2)):end])
         if all(hn .== hn[1])
             maxd = interpolateHighestDerivative(t[(end - (k + 2)):end],
-                                                y[(end - (k + 2)):end])
+                y[(end - (k + 2)):end])
             push!(errors, h^(k + 2) * normy(maxd))
         end
     end
@@ -378,16 +378,16 @@ end
 # jd is a bunch of auxilary data saved between steps (jacobian and last coefficient 'a')
 # wt is a vector of weights of the norm
 function stepper(ord::Integer,
-                 t::AbstractVector,
-                 y::AbstractVector,
-                 dy::AbstractVector,
-                 h_next::Real,
-                 F,
-                 jd::JacData,
-                 computejac,
-                 wt,
-                 normy,
-                 maxorder::Integer)
+        t::AbstractVector,
+        y::AbstractVector,
+        dy::AbstractVector,
+        h_next::Real,
+        F,
+        jd::JacData,
+        computejac,
+        wt,
+        normy,
+        maxorder::Integer)
     l = length(y[1])        # the number of dependent variables
 
     # @todo this should be the view of the tail of the arrays t and y
@@ -433,11 +433,11 @@ function stepper(ord::Integer,
 
     # we compute the corrected value "yc", updating the gradient if necessary
     (status, yc, jd) = corrector(jd,       # old coefficient a and jacobian
-                                 a,        # current coefficient a
-                                 jac_new,  # this function is called when new jacobian is needed
-                                 y0,       # starting point for modified newton
-                                 f_newton, # we want to find zeroes of this function
-                                 normy)     # the norm used to estimate error needs weights
+        a,        # current coefficient a
+        jac_new,  # this function is called when new jacobian is needed
+        y0,       # starting point for modified newton
+        f_newton, # we want to find zeroes of this function
+        normy)     # the norm used to estimate error needs weights
 
     alpha = Array{eltype(t)}(undef, ord + 1)
 
@@ -471,11 +471,11 @@ end
 # the jacobian g_old and a_old.
 
 function corrector(jd::JacData,
-                   a_new::T,
-                   jac_new,
-                   y0::AbstractVector{Ty},
-                   f_newton,
-                   normy) where {T, Ty}
+        a_new::T,
+        jac_new,
+        y0::AbstractVector{Ty},
+        f_newton,
+        normy) where {T, Ty}
 
     # if jd.a == 0 the new jacobian is always computed, independently
     # of the value of a_new
@@ -510,8 +510,8 @@ end
 # set back to y0.  Status tells if the fixed point was obtained
 # (status==0) or not (status==-1).
 function newton_iteration(f,
-                          y0::AbstractVector{T},
-                          normy) where {T <: Number}
+        y0::AbstractVector{T},
+        normy) where {T <: Number}
 
     # first guess comes from the predictor method, then we compute the
     # second guess to get the norm1
@@ -571,8 +571,8 @@ end
 
 # returns the value of the interpolation polynomial at the point x0
 function interpolateAt(x::AbstractVector{T},
-                       y::AbstractVector,
-                       x0::T) where {T <: Real}
+        y::AbstractVector,
+        x0::T) where {T <: Real}
     if length(x) != length(y)
         error("x and y have to be of the same size.")
     end
@@ -597,8 +597,8 @@ end
 # returns the value of the derivative of the interpolation polynomial
 # at the point x0
 function interpolateDerivativeAt(x::AbstractVector{T},
-                                 y::AbstractVector,
-                                 x0::T) where {T <: Real}
+        y::AbstractVector,
+        x0::T) where {T <: Real}
     if length(x) != length(y)
         error("x and y have to be of the same size.")
     end
@@ -632,7 +632,7 @@ end
 # p(x)=a_{k-1}*x^{k-1}+...a_1*x+a_0 then this function returns the
 # k-th derivative of p, i.e. (k-1)!*a_{k-1}
 function interpolateHighestDerivative(x::AbstractVector,
-                                      y::AbstractVector)
+        y::AbstractVector)
     if length(x) != length(y)
         error("x and y have to be of the same size.")
     end
