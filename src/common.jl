@@ -7,9 +7,9 @@ end
 dassl(; maxorder = 6, factorize_jacobian = true) = dassl(maxorder, factorize_jacobian)
 
 function solve(prob::DiffEqBase.AbstractDAEProblem{uType, duType, tupType, isinplace},
-               alg::DASSLDAEAlgorithm, args...; timeseries_errors = true,
-               abstol = 1e-5, reltol = 1e-3, dt = 1e-4, dtmin = 0.0, dtmax = Inf,
-               callback = nothing, kwargs...) where {uType, duType, tupType, isinplace}
+        alg::DASSLDAEAlgorithm, args...; timeseries_errors = true,
+        abstol = 1e-5, reltol = 1e-3, dt = 1e-4, dtmin = 0.0, dtmax = Inf,
+        callback = nothing, kwargs...) where {uType, duType, tupType, isinplace}
     tType = eltype(tupType)
 
     if callback != nothing || :callback in keys(prob.kwargs)
@@ -32,14 +32,14 @@ function solve(prob::DiffEqBase.AbstractDAEProblem{uType, duType, tupType, isinp
     ### Finishing Routine
 
     ts, timeseries, dus = dasslSolve(f, prob.u0, tspan,
-                                     abstol = abstol,
-                                     reltol = reltol,
-                                     maxstep = dtmax,
-                                     minstep = dtmin,
-                                     initstep = dt,
-                                     dy0 = prob.du0,
-                                     maxorder = alg.maxorder,
-                                     factorize_jacobian = alg.factorize_jacobian)
+        abstol = abstol,
+        reltol = reltol,
+        maxstep = dtmax,
+        minstep = dtmin,
+        initstep = dt,
+        dy0 = prob.du0,
+        maxorder = alg.maxorder,
+        factorize_jacobian = alg.factorize_jacobian)
     #=
     timeseries = Vector{uType}(0)
     if typeof(prob.u0)<:Number
@@ -53,5 +53,5 @@ function solve(prob::DiffEqBase.AbstractDAEProblem{uType, duType, tupType, isinp
     end
     =#
     DiffEqBase.build_solution(prob, alg, ts, timeseries, du = dus,
-                              timeseries_errors = timeseries_errors)
+        timeseries_errors = timeseries_errors)
 end
