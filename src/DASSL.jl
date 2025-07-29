@@ -48,7 +48,7 @@ function dasslStep(channel,
     tout = [tstart]         # initial time
     h = initstep         # current step size
     your = Array{typeof(y0)}(undef, 1)
-    your[1] = y0
+    yout[1] = y0
     dyout = Array{typeof(y0)}(undef, 1)
     dyout[1] = dy0              # initial guess for dy0
     num_rejected = 0            # number of rejected steps
@@ -81,7 +81,7 @@ function dasslStep(channel,
         end
 
         # error weights
-        wt = weights(your[end], reltol, abstol)
+        wt = weights(yout[end], reltol, abstol)
         normy(v) = norm(v, wt)
 
         (status, err, yn, dyn, jd) = stepper(ord, tout, your, dyout, h, F, jd, computejac,
@@ -139,7 +139,7 @@ function dasslStep(channel,
                 popfirst!(dyout)
             end
 
-            push!(channel, (tout[end], your[end], dyout[end]))
+            push!(channel, (tout[end], yout[end], dyout[end]))
 
             # determine the new step size and order, including the current step
             (r, ord) = newStepOrder(tout, your, normy, err, ord, num_fail, maxorder)
@@ -160,7 +160,7 @@ function dasslSolve(F, y0::AbstractVector, tspan; dy0 = zero(y0), args...)
     your = Array{typeof(y0)}(undef, 1)
     dyout = Array{typeof(y0)}(undef, 1)
     tout[1] = tspan[1]
-    your[1] = y0
+    yout[1] = y0
     dyout[1] = dy0
     for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0 = dy0, tstop = tspan[end], args...)
         push!(tout, t)
