@@ -78,7 +78,7 @@ function F(t,y,dy)
 end
 ```
 
-The initial data shoud now be set as a vector
+The initial data should now be set as a vector
 
 ```
 y0      = [0.0,1.0]           # y0=[u(0),v(0)]
@@ -131,7 +131,7 @@ them are compatible with the namse used in ODE package.
 
 - `maxorder=6` Apart from selecting the current step size DASSL method
   can also dynamically change the order of BDF method used.  BDF is
-  stable up to 6-th order, which is the defaul upper limit but for
+  stable up to 6-th order, which is the default upper limit but for
   some systems of equations it may make more sense to use lower
   orders.
 
@@ -139,7 +139,7 @@ them are compatible with the namse used in ODE package.
   important to start with consistent initial conditions, i.e. to
   choose `y` and `y'` such that `F(t,y,y')=0` initially.  DASSL tries
   to guess the initial value of `y'`, but if it fails you can set your
-  own initial condtions for the derivative.
+  own initial conditions for the derivative.
 
 - `norm=dassl_norm`/`weights=dassl_weights` DASSL computes the error
   roughly as `err=norm(yc-y0)`, and accepting the step when
