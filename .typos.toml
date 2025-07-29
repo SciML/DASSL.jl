@@ -71,4 +71,6 @@ MTK = "MTK"
 ODE = "ODE"
 PDE = "PDE"
 SDE = "SDE"
-\n\n# DASSL/Fortran-specific terms\nyout = "yout"\n
+
+# DASSL/Fortran-specific terms
+yout = "yout"
