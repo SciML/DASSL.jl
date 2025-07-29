@@ -4,7 +4,7 @@ using DASSL
 # test the convergence of dasslSolve.  dasslTestConvergence returns a
 # tuple of relative and absolute L^Inf norms of a difference of
 # analytic and numerical solutions.  The third element in the returned
-# touple is the time it took to obtain the numerical solution.
+# tuple is the time it took to obtain the numerical solution.
 function dasslTestConvergence(F::Function,  # equation to solve
         y0::Vector{T}, # initial data
         tspan::Vector{T}, # time span of a solution

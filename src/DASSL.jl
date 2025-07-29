@@ -203,7 +203,7 @@ function newStepOrder(t::AbstractVector,
         (r, order) = (1 / 4, 1)
 
     elseif num_fail == 0 && available_steps == 2 && err < 1
-        # The first successfull step, try increasing the order without changing the step size
+        # The first successful step, try increasing the order without changing the step size
         (r, order) = (1, 2)
 
     elseif available_steps < k + 2
@@ -375,7 +375,7 @@ end
 # y is a matrix [y_1,...,y_n] of size k x l
 # h_next is a size of next step
 # F encodes the DAE: F(t,y,y')=0
-# jd is a bunch of auxilary data saved between steps (jacobian and last coefficient 'a')
+# jd is a bunch of auxiliary data saved between steps (jacobian and last coefficient 'a')
 # wt is a vector of weights of the norm
 function stepper(ord::Integer,
         t::AbstractVector,
