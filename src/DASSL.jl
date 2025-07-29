@@ -47,7 +47,7 @@ function dasslStep(channel,
     ord = 1                # initial method order
     tout = [tstart]         # initial time
     h = initstep         # current step size
-    your = Array{typeof(y0)}(undef, 1)
+    yout = Array{typeof(y0)}(undef, 1)
     yout[1] = y0
     dyout = Array{typeof(y0)}(undef, 1)
     dyout[1] = dy0              # initial guess for dy0
@@ -64,7 +64,7 @@ function dasslStep(channel,
     # This is the trick to improve on the initial guess for
     # y0.  Basically we run a one iteration of stepper and use the
     # result as the initial derivative
-    (_, _, _, dyout[1], _) = stepper(1, tout, your, dyout, 10 * eps(one(tstart)), F, jd,
+    (_, _, _, dyout[1], _) = stepper(1, tout, yout, dyout, 10 * eps(one(tstart)), F, jd,
         computejac, weights(y0, 1, 1),
         v -> norm(v, weights(y0, 1, 1)), 1)
 
@@ -84,7 +84,7 @@ function dasslStep(channel,
         wt = weights(yout[end], reltol, abstol)
         normy(v) = norm(v, wt)
 
-        (status, err, yn, dyn, jd) = stepper(ord, tout, your, dyout, h, F, jd, computejac,
+        (status, err, yn, dyn, jd) = stepper(ord, tout, yout, dyout, h, F, jd, computejac,
             wt, normy, maxorder)
 
         if status < 0
@@ -107,15 +107,15 @@ function dasslStep(channel,
             num_fail += 1
             # keep track of the total number of rejected steps
             num_rejected += 1
-            # temporarily push the new step to the your (needed by newStepOrder)
+            # temporarily push the new step to the yout (needed by newStepOrder)
             push!(tout, tout[end] + h)
-            push!(your, yn)
+            push!(yout, yn)
             # determine the new step size and order, excluding the current step
-            (r, ord) = newStepOrder(tout, your, normy, err, ord, num_fail, maxorder)
+            (r, ord) = newStepOrder(tout, yout, normy, err, ord, num_fail, maxorder)
 
             # pop the temporary steps
             pop!(tout)
-            pop!(your)
+            pop!(yout)
             h *= r
             continue
 
@@ -129,20 +129,20 @@ function dasslStep(channel,
 
             # save the results
             push!(tout, tout[end] + h)
-            push!(your, yn)
+            push!(yout, yn)
             push!(dyout, dyn)
 
             # remove old results
             if length(tout) > ord + 3
                 popfirst!(tout)
-                popfirst!(your)
+                popfirst!(yout)
                 popfirst!(dyout)
             end
 
             push!(channel, (tout[end], yout[end], dyout[end]))
 
             # determine the new step size and order, including the current step
-            (r, ord) = newStepOrder(tout, your, normy, err, ord, num_fail, maxorder)
+            (r, ord) = newStepOrder(tout, yout, normy, err, ord, num_fail, maxorder)
 
             h *= r
         end
@@ -157,26 +157,26 @@ end
 # solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
 function dasslSolve(F, y0::AbstractVector, tspan; dy0 = zero(y0), args...)
     tout = Array{typeof(tspan[1])}(undef, 1)
-    your = Array{typeof(y0)}(undef, 1)
+    yout = Array{typeof(y0)}(undef, 1)
     dyout = Array{typeof(y0)}(undef, 1)
     tout[1] = tspan[1]
     yout[1] = y0
     dyout[1] = dy0
     for (t, y, dy) in dasslIterator(F, y0, tspan[1]; dy0 = dy0, tstop = tspan[end], args...)
         push!(tout, t)
-        push!(your, y)
+        push!(yout, y)
         push!(dyout, dy)
         if t >= tspan[end]
             break
         end
     end
-    return (tout, your, dyout)
+    return (tout, yout, dyout)
 end
 
 # A scalar version of dasslSolve, implemented as a wrapper around dasslSolve
 function dasslSolve(F, y0::Number, tspan; args...)
-    (tout, your, dyout) = dasslSolve(F, [y0], tspan; args...)
-    return (tout, map(first, your), map(first, dyout))
+    (tout, yout, dyout) = dasslSolve(F, [y0], tspan; args...)
+    return (tout, map(first, yout), map(first, dyout))
 end
 
 function newStepOrder(t::AbstractVector,
