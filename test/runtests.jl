@@ -30,7 +30,7 @@ using DASSL, Test
 
         # analytical jacobian version (vector)
         (tna, yna, dyna) = dasslSolve(F, [sol(0.0)], tspan, maxorder = order, Fy = Fy,
-            Fdy = Fdy)
+                                      Fdy = Fdy)
         aerror = maximum(abs.(map(first, yn) - sol(tn)))
         rerror = maximum(abs.(map(first, yn) - sol(tn)) ./ abs.(sol(tn)))
         nsteps = length(tn)
@@ -40,6 +40,4 @@ using DASSL, Test
     end
 end
 
-@testset "Testing common interface" begin
-    include("common.jl")
-end
+@testset "Testing common interface" begin include("common.jl") end
