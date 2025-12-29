@@ -1,4 +1,6 @@
-abstract type DASSLDAEAlgorithm <: DiffEqBase.AbstractDAEAlgorithm end
+using SciMLBase: AbstractDAEAlgorithm, AbstractDAEProblem, build_solution, isinplace
+
+abstract type DASSLDAEAlgorithm <: AbstractDAEAlgorithm end
 struct dassl <: DASSLDAEAlgorithm
     maxorder::Any
     factorize_jacobian::Any
@@ -6,7 +8,7 @@ end
 
 dassl(; maxorder = 6, factorize_jacobian = true) = dassl(maxorder, factorize_jacobian)
 
-function solve(prob::DiffEqBase.AbstractDAEProblem{uType, duType, tupType, isinplace},
+function solve(prob::AbstractDAEProblem{uType, duType, tupType, isinplace},
         alg::DASSLDAEAlgorithm, args...; timeseries_errors = true,
         abstol = 1e-5, reltol = 1e-3, dt = 1e-4, dtmin = 0.0, dtmax = Inf,
         callback = nothing, kwargs...) where {uType, duType, tupType, isinplace}
@@ -53,6 +55,6 @@ function solve(prob::DiffEqBase.AbstractDAEProblem{uType, duType, tupType, isinp
         end
     end
     =#
-    DiffEqBase.build_solution(prob, alg, ts, timeseries, du = dus,
+    build_solution(prob, alg, ts, timeseries, du = dus,
         timeseries_errors = timeseries_errors)
 end
