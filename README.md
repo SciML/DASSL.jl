@@ -2,10 +2,10 @@ DASSL.jl
 ========
 
 [![Build Status](https://github.com/SciML/DASSL.jl/workflows/CI/badge.svg)](https://github.com/SciML/DASSL.jl/actions?query=workflow%3ACI)
-[![Coverage Status](https://img.shields.io/coveralls/pwl/DASSL.jl.svg)](https://coveralls.io/r/pwl/DASSL.jl)
+[![Coverage Status](https://img.shields.io/coveralls/SciML/DASSL.jl.svg)](https://coveralls.io/r/SciML/DASSL.jl)
 
-This is an implementation of DASSL algorithm for solving algebraic
-differential equations.  To install a stable version run
+This is an implementation of the DASSL algorithm for solving differential
+algebraic equations (DAEs).  To install a stable version run
 
 ```
 Pkg.add("DASSL")
@@ -14,7 +14,7 @@ Pkg.add("DASSL")
 Common Interface Example
 ------------------------
 
-This package is compatible with the JuliaDiffEq common solver interface which is documented in the [DifferentialEquations.jl documentation](http://docs.juliadiffeq.org/latest/). Following the [DAE Tutorial](http://docs.juliadiffeq.org/latest/tutorials/dae_example.html), one can use `dassl()` as follows:
+This package is compatible with the SciML common solver interface which is documented in the [DifferentialEquations.jl documentation](https://docs.sciml.ai/DiffEqDocs/stable/). Following the [DAE Tutorial](https://docs.sciml.ai/DiffEqDocs/stable/tutorials/dae_example/), one can use `dassl()` as follows:
 
 ```julia
 using DASSL
@@ -33,7 +33,7 @@ prob = DAEProblem(resrob,du0,u0,tspan)
 sol = solve(prob, dassl())
 ```
 
-For more details on using this interface, [see the ODE tutorial](http://docs.juliadiffeq.org/latest/tutorials/ode_example.html).
+For more details on using this interface, [see the ODE tutorial](https://docs.sciml.ai/DiffEqDocs/stable/tutorials/ode_example/).
 
 Examples
 --------
@@ -48,11 +48,11 @@ tspan     = [0.0,10.0]             # time span over which we integrate
 (tn,yn)   = dasslSolve(F,y0,tspan) # returns (tn,yn)
 ```
 
-You can also change the relative error tolerance `rtol`, absolute
-error tolerance `atol` as well as initial step size `h0` as follows
+You can also change the relative error tolerance `reltol`, absolute
+error tolerance `abstol`, as well as the initial step size `initstep` as follows
 
 ```
-(tn,yn)   = dasslSolve(F,y0,tspan)
+(tn,yn)   = dasslSolve(F,y0,tspan; reltol=1e-6, abstol=1e-8, initstep=1e-5)
 ```
 
 To test the convergence and execution time for index-1 problem run
@@ -109,7 +109,7 @@ Keyword arguments
 -----------------
 
 DASSL supports a number of keyword arguments, the names of most of
-them are compatible with the namse used in ODE package.
+them are compatible with the names used in ODE package.
 
 - `reltol=1e-3`/`abstol=1e-5` set the relative/absolute local error tolerances
 
@@ -166,12 +166,12 @@ to stop the integration when the solution `y` drops below `0.1`
 
 
 ```
-F(t,y,dy)=dy+y
+F(t,y,dy) = dy .+ y
 
 # iterator version of dassl solver
-for (t,y,dy) in dasslIterator(F,1.0,0.0)
-    if y < 0.1
-        @show (t,y,dy)
+for (t,y,dy) in dasslIterator(F, [1.0], 0.0)
+    if y[1] < 0.1
+        @show (t, y[1], dy[1])
         break
     end
 end
