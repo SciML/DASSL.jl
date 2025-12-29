@@ -22,7 +22,11 @@ jobs:
           - "1"
           - "lts"
           - "pre"
+        os:
+          - "ubuntu-latest"
+          - "windows-latest"
     uses: "SciML/.github/.github/workflows/tests.yml@v1"
     with:
       julia-version: "${{ matrix.version }}"
+      os: "${{ matrix.os }}"
     secrets: "inherit"
