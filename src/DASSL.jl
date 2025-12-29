@@ -2,10 +2,12 @@ module DASSL
 
 export dasslIterator, dasslSolve
 
-using Reexport
+using Reexport: @reexport
+using DiffEqBase: DiffEqBase
 @reexport using DiffEqBase
-using LinearAlgebra
-using PrecompileTools
+using LinearAlgebra: diagm, factorize, norm
+using PrecompileTools: @compile_workload, @setup_workload
+using SciMLBase: DAEProblem, SciMLBase
 
 import DiffEqBase: solve
 
@@ -55,7 +57,7 @@ function dasslStep(channel,
 
     # wrapper around the jacobian function
     if factorize_jacobian
-        computejac = (t, y, dy, a) -> LinearAlgebra.factorize(jacobian(t, y, dy, a))
+        computejac = (t, y, dy, a) -> factorize(jacobian(t, y, dy, a))
     else
         computejac = jacobian
     end

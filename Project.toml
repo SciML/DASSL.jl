@@ -1,23 +1,27 @@
 name = "DASSL"
 uuid = "e993076c-0cfd-5d6b-a1ac-36489fdf7917"
-authors = ["Chris Rackauckas <accounts@chrisrackauckas.com>"]
 version = "2.7.0"
+authors = ["Chris Rackauckas <accounts@chrisrackauckas.com>"]
 
 [deps]
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
+SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 
 [compat]
 DiffEqBase = "6.5"
+ExplicitImports = "1"
 PrecompileTools = "1"
 Reexport = "0.2, 1.0"
+SciMLBase = "2"
 julia = "1.10"
 
 [extras]
 DAEProblemLibrary = "dfb8ca35-80a1-48ba-a605-84916a45b4f8"
+ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["DAEProblemLibrary", "Test"]
+test = ["DAEProblemLibrary", "ExplicitImports", "Test"]

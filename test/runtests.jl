@@ -1,9 +1,10 @@
 using DASSL, Test
+using LinearAlgebra: diagm, I
 
 @testset "Testing maxorder" begin
     F(t, y, dy) = (dy + y .^ 2)
-    Fy(t, y, dy) = diagm(2y)
-    Fdy(t, y, dy) = eye(length(y))
+    Fy(t, y, dy) = diagm(0 => 2y)
+    Fdy(t, y, dy) = Matrix{Float64}(I, length(y), length(y))
 
     sol(t) = 1.0 ./ (1 .+ t)
     tspan = [0.0, 1.0]
@@ -43,4 +44,8 @@ end
 
 @testset "Testing common interface" begin
     include("common.jl")
+end
+
+@testset "Explicit Imports" begin
+    include("explicit_imports.jl")
 end
