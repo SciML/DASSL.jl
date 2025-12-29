@@ -1,5 +1,3 @@
-__precompile__()
-
 module DASSL
 
 export dasslIterator, dasslSolve
@@ -7,6 +5,7 @@ export dasslIterator, dasslSolve
 using Reexport
 @reexport using DiffEqBase
 using LinearAlgebra
+using PrecompileTools
 
 import DiffEqBase: solve
 
@@ -684,6 +683,26 @@ function numerical_jacobian(F, reltol, abstol, weights)
         end
 
         jac
+    end
+end
+
+@setup_workload begin
+    @compile_workload begin
+        # Precompile the DiffEqBase interface with Float64
+        # This is the most common use case
+        f_dae = (out, du, u, p, t) -> (out .= du .+ u)
+        prob = DAEProblem(f_dae, [0.0], [1.0], (0.0, 0.1), nothing;
+            differential_vars = [true])
+        sol = solve(prob, dassl())
+
+        # Precompile with a slightly larger system to exercise more code paths
+        f_dae2 = (out, du, u, p, t) -> begin
+            out[1] = du[1] + u[1] + u[2]
+            out[2] = du[2] + u[1] - u[2]
+        end
+        prob2 = DAEProblem(f_dae2, [0.0, 0.0], [1.0, 0.5], (0.0, 0.1), nothing;
+            differential_vars = [true, true])
+        sol2 = solve(prob2, dassl())
     end
 end
 
