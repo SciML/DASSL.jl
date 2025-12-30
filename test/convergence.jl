@@ -1,16 +1,22 @@
-using Winston
-using DASSL
+# Convergence tests for DASSL.jl
+# This file tests the convergence properties of the DASSL solver by comparing
+# numerical solutions against analytical solutions at various tolerances.
 
-# test the convergence of dasslSolve.  dasslTestConvergence returns a
-# tuple of relative and absolute L^Inf norms of a difference of
-# analytic and numerical solutions.  The third element in the returned
-# tuple is the time it took to obtain the numerical solution.
+using DASSL
+using LinearAlgebra
+using Test
+
+# Test the convergence of dasslSolve. Returns a tuple of relative and absolute
+# L^Inf norms of the difference between analytic and numerical solutions.
+# The third element in the returned tuple is the time it took to obtain the
+# numerical solution.
 function dasslTestConvergence(F::Function,  # equation to solve
         y0::Vector{T}, # initial data
         tspan::Vector{T}, # time span of a solution
         sol::Function,  # analytic solution, for comparison with numerical solution
         rtol_range::Vector{T}, # vector of relative tolerances
-        atol_range::Vector{T}) where {T <: Number} # vector of absolute tolerances
+        atol_range::Vector{T}; # vector of absolute tolerances
+        dy0::Vector{T} = zero(y0)) where {T <: Number}
     if length(rtol_range) != length(atol_range)
         error("The table of relative errors and absolute errors should be of the same size.")
     end
@@ -22,18 +28,22 @@ function dasslTestConvergence(F::Function,  # equation to solve
     times = zeros(T, n)
 
     for i in 1:n
-        times[i] = @elapsed (
-            tn, yn) = dasslSolve(F, y0, tspan,
-            rtol = rtol_range[i],
-            atol = atol_range[i])
+        times[i] = @elapsed begin
+            (tn, yout, dyout) = dasslSolve(F, y0, tspan;
+                dy0 = dy0,
+                reltol = rtol_range[i],
+                abstol = atol_range[i])
+        end
         k = length(tn)
         delta_rel = zeros(T, k)
         delta_abs = zeros(T, k)
 
         for j in 1:k
             t = tn[j]
-            delta_abs[j] = norm(sol(t) - yn[:, j], Inf)
-            delta_rel[j] = norm(sol(t) - yn[:, j], Inf) / norm(sol(t), Inf)
+            y_exact = sol(t)
+            y_num = yout[j]
+            delta_abs[j] = norm(y_exact - y_num, Inf)
+            delta_rel[j] = norm(y_exact - y_num, Inf) / norm(y_exact, Inf)
         end
 
         norms_abs[i] = norm(delta_abs, Inf)
@@ -43,69 +53,88 @@ function dasslTestConvergence(F::Function,  # equation to solve
     return norms_rel, norms_abs, times
 end
 
-function dasslDrawConvergence(F::Function,  # equation to solve
-        y0::Vector{T}, # initial data
-        tspan::Vector{T}, # time span of a solution
-        sol::Function,  # analytic solution, for comparison with numerical solution
-        rtol::Vector{T}, # vector of relative tolerances
-        atol::Vector{T}) where {T <: Number} # vector of absolute tolerances
+#------------------------------------------------------------
+# Simple ODE example: dy/dt = -y, y(0) = 1
+# Analytical solution: y(t) = exp(-t)
+#------------------------------------------------------------
 
-    # run the dasslSolve to trigger the compilation
-    dasslSolve(F, y0, tspan)
+function F_exp(t::T, y::Vector{T}, dy::Vector{T}) where {T <: Number}
+    dy .+ y
+end
 
-    # run the convergence tests
-    (rerr, aerr, time) = dasslTestConvergence(F, y0, tspan, sol, rtol, atol)
+function sol_exp(t::T) where {T <: Number}
+    [exp(-t)]
+end
 
-    tbl = Table(1, 3)
-
-    tbl[1, 1] = FramedPlot(title = "Absolute error",
-        xlabel = "Absolute tolerance",
-        ylabel = "Absolute error",
-        xlog = true,
-        ylog = true)
-    tbl[1, 2] = FramedPlot(title = "Relative error",
-        xlabel = "Relative tolerance",
-        ylabel = "Relative error",
-        xlog = true,
-        ylog = true)
-    tbl[1, 3] = FramedPlot(title = "Execution time",
-        xlabel = "Relative error",
-        ylabel = "Elapsed time",
-        xlog = true,
-        ylog = true)
-
-    add(tbl[1, 1], Points(atol, aerr))
-    add(tbl[1, 2], Points(rtol, rerr))
-    add(tbl[1, 3], Points(rerr, time))
-
-    setattr(tbl, aspect_ratio = 0.3)
-
-    return tbl
+function dy_sol_exp(t::T) where {T <: Number}
+    [-exp(-t)]
 end
 
 #------------------------------------------------------------
-# index-1 example
+# Index-1 DAE example from Ascher & Petzold
+# This is a linear index-1 DAE with algebraic constraint on y[3]
 #------------------------------------------------------------
 
-function F1(t::T, y::Array{T, 1}, dy::Array{T, 1}) where {T <: Number}
+function F_dae(t::T, y::Vector{T}, dy::Vector{T}) where {T <: Number}
     a = 10.0
     [-dy[1] + (a - 1 / (2 - t)) * y[1] + (2 - t) * a * y[3] + exp(t) * (3 - t) / (2 - t),
         -dy[2] + (1 - a) / (t - 2) * y[1] - y[2] + (a - 1) * y[3] + 2 * exp(t),
         (t + 2) * y[1] + (t^2 - 4) * y[2] - (t^2 + t - 2) * exp(t)]
 end
 
-function sol1(t::T) where {T <: Number}
-    a = 10.0
-    [exp(t),
-        exp(t),
-        -exp(t) / (2 - t)]
+function sol_dae(t::T) where {T <: Number}
+    [exp(t), exp(t), -exp(t) / (2 - t)]
 end
 
-const y1 = sol1(0.0)
-const tspan1 = [0.0, 1.0]
+function dy_sol_dae(t::T) where {T <: Number}
+    [exp(t), exp(t), -exp(t) * (3 - t) / (2 - t)^2]
+end
 
-const rtol = 10.0 .^ -[1.0:0.1:5.0]
-const atol = 0.01 * rtol
+@testset "Convergence tests" begin
+    # Test tolerances - use a moderate range that works for both ODE and DAE
+    # Note: Very tight tolerances (< 1e-6) can cause issues with the DAE problem
+    rtol_range = 10.0 .^ collect(-3.0:-1.0:-6.0)
+    atol_range = 0.01 * rtol_range
 
-tbl = dasslDrawConvergence(F1, y1, tspan1, sol1, rtol, atol)
-display(tbl)
+    @testset "Simple ODE convergence" begin
+        y0 = sol_exp(0.0)
+        dy0 = dy_sol_exp(0.0)
+        tspan = [0.0, 1.0]
+
+        (rel_errors, abs_errors, times) = dasslTestConvergence(
+            F_exp, y0, tspan, sol_exp, rtol_range, atol_range; dy0 = dy0)
+
+        # Check that errors decrease as tolerances decrease
+        # The errors should roughly follow the tolerance (within some factor)
+        for i in 1:length(rtol_range)
+            # Allow some margin - errors should be within 100x the tolerance
+            @test abs_errors[i] < 100 * atol_range[i]
+            @test rel_errors[i] < 100 * rtol_range[i]
+        end
+
+        # Check that errors generally decrease (not strictly monotonic due to noise)
+        @test abs_errors[1] > abs_errors[end]
+        @test rel_errors[1] > rel_errors[end]
+    end
+
+    @testset "Index-1 DAE convergence" begin
+        y0 = sol_dae(0.0)
+        dy0 = dy_sol_dae(0.0)
+        tspan = [0.0, 1.0]
+
+        (rel_errors, abs_errors, times) = dasslTestConvergence(
+            F_dae, y0, tspan, sol_dae, rtol_range, atol_range; dy0 = dy0)
+
+        # Check that errors decrease as tolerances decrease
+        for i in 1:length(rtol_range)
+            # DAE problems may have larger errors than pure ODEs
+            # Allow 1000x margin for the algebraic constraint
+            @test abs_errors[i] < 1000 * atol_range[i]
+            @test rel_errors[i] < 1000 * rtol_range[i]
+        end
+
+        # Check that errors generally decrease
+        @test abs_errors[1] > abs_errors[end]
+        @test rel_errors[1] > rel_errors[end]
+    end
+end
