@@ -49,3 +49,5 @@ end
 @testset "Explicit Imports" begin
     include("explicit_imports.jl")
 end
+
+include("convergence.jl")
