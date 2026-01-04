@@ -30,9 +30,13 @@ using LinearAlgebra: diagm, I
         @test vcat(dynV...) == dyn
 
         # analytical jacobian version (vector)
-        (tna, yna,
-            dyna) = dasslSolve(F, [sol(0.0)], tspan, maxorder = order, Fy = Fy,
-            Fdy = Fdy)
+        (
+            tna, yna,
+            dyna,
+        ) = dasslSolve(
+            F, [sol(0.0)], tspan, maxorder = order, Fy = Fy,
+            Fdy = Fdy
+        )
         aerror = maximum(abs.(map(first, yn) - sol(tn)))
         rerror = maximum(abs.(map(first, yn) - sol(tn)) ./ abs.(sol(tn)))
         nsteps = length(tn)
