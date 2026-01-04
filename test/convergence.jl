@@ -10,13 +10,15 @@ using Test
 # L^Inf norms of the difference between analytic and numerical solutions.
 # The third element in the returned tuple is the time it took to obtain the
 # numerical solution.
-function dasslTestConvergence(F::Function,  # equation to solve
+function dasslTestConvergence(
+        F::Function,  # equation to solve
         y0::Vector{T}, # initial data
         tspan::Vector{T}, # time span of a solution
         sol::Function,  # analytic solution, for comparison with numerical solution
         rtol_range::Vector{T}, # vector of relative tolerances
         atol_range::Vector{T}; # vector of absolute tolerances
-        dy0::Vector{T} = zero(y0)) where {T <: Number}
+        dy0::Vector{T} = zero(y0)
+    ) where {T <: Number}
     if length(rtol_range) != length(atol_range)
         error("The table of relative errors and absolute errors should be of the same size.")
     end
@@ -29,10 +31,12 @@ function dasslTestConvergence(F::Function,  # equation to solve
 
     for i in 1:n
         times[i] = @elapsed begin
-            (tn, yout, dyout) = dasslSolve(F, y0, tspan;
+            (tn, yout, dyout) = dasslSolve(
+                F, y0, tspan;
                 dy0 = dy0,
                 reltol = rtol_range[i],
-                abstol = atol_range[i])
+                abstol = atol_range[i]
+            )
         end
         k = length(tn)
         delta_rel = zeros(T, k)
@@ -59,15 +63,15 @@ end
 #------------------------------------------------------------
 
 function F_exp(t::T, y::Vector{T}, dy::Vector{T}) where {T <: Number}
-    dy .+ y
+    return dy .+ y
 end
 
 function sol_exp(t::T) where {T <: Number}
-    [exp(-t)]
+    return [exp(-t)]
 end
 
 function dy_sol_exp(t::T) where {T <: Number}
-    [-exp(-t)]
+    return [-exp(-t)]
 end
 
 #------------------------------------------------------------
@@ -77,17 +81,19 @@ end
 
 function F_dae(t::T, y::Vector{T}, dy::Vector{T}) where {T <: Number}
     a = 10.0
-    [-dy[1] + (a - 1 / (2 - t)) * y[1] + (2 - t) * a * y[3] + exp(t) * (3 - t) / (2 - t),
+    return [
+        -dy[1] + (a - 1 / (2 - t)) * y[1] + (2 - t) * a * y[3] + exp(t) * (3 - t) / (2 - t),
         -dy[2] + (1 - a) / (t - 2) * y[1] - y[2] + (a - 1) * y[3] + 2 * exp(t),
-        (t + 2) * y[1] + (t^2 - 4) * y[2] - (t^2 + t - 2) * exp(t)]
+        (t + 2) * y[1] + (t^2 - 4) * y[2] - (t^2 + t - 2) * exp(t),
+    ]
 end
 
 function sol_dae(t::T) where {T <: Number}
-    [exp(t), exp(t), -exp(t) / (2 - t)]
+    return [exp(t), exp(t), -exp(t) / (2 - t)]
 end
 
 function dy_sol_dae(t::T) where {T <: Number}
-    [exp(t), exp(t), -exp(t) * (3 - t) / (2 - t)^2]
+    return [exp(t), exp(t), -exp(t) * (3 - t) / (2 - t)^2]
 end
 
 @testset "Convergence tests" begin
@@ -102,7 +108,8 @@ end
         tspan = [0.0, 1.0]
 
         (rel_errors, abs_errors, times) = dasslTestConvergence(
-            F_exp, y0, tspan, sol_exp, rtol_range, atol_range; dy0 = dy0)
+            F_exp, y0, tspan, sol_exp, rtol_range, atol_range; dy0 = dy0
+        )
 
         # Check that errors decrease as tolerances decrease
         # The errors should roughly follow the tolerance (within some factor)
@@ -123,7 +130,8 @@ end
         tspan = [0.0, 1.0]
 
         (rel_errors, abs_errors, times) = dasslTestConvergence(
-            F_dae, y0, tspan, sol_dae, rtol_range, atol_range; dy0 = dy0)
+            F_dae, y0, tspan, sol_dae, rtol_range, atol_range; dy0 = dy0
+        )
 
         # Check that errors decrease as tolerances decrease
         for i in 1:length(rtol_range)
