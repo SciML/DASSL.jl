@@ -1,6 +1,8 @@
 using DASSL, Test
 using LinearAlgebra: diagm, I
 
+const GROUP = get(ENV, "GROUP", "all")
+
 @testset "Testing maxorder" begin
     F(t, y, dy) = (dy + y .^ 2)
     Fy(t, y, dy) = diagm(0 => 2y)
@@ -55,3 +57,8 @@ end
 end
 
 include("convergence.jl")
+
+# Allocation tests - run separately to avoid interference with precompilation
+if GROUP == "all" || GROUP == "nopre"
+    include("alloc_tests.jl")
+end

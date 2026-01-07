@@ -11,6 +11,8 @@ Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 
 [compat]
+AllocCheck = "0.2"
+BenchmarkTools = "1"
 DiffEqBase = "6.5"
 ExplicitImports = "1"
 PrecompileTools = "1"
@@ -19,9 +21,11 @@ SciMLBase = "2"
 julia = "1.10"
 
 [extras]
+AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 DAEProblemLibrary = "dfb8ca35-80a1-48ba-a605-84916a45b4f8"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["DAEProblemLibrary", "ExplicitImports", "Test"]
+test = ["AllocCheck", "BenchmarkTools", "DAEProblemLibrary", "ExplicitImports", "Test"]

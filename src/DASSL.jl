@@ -5,7 +5,7 @@ export dasslIterator, dasslSolve
 using Reexport: @reexport
 using DiffEqBase: DiffEqBase
 @reexport using DiffEqBase
-using LinearAlgebra: diagm, factorize, norm
+using LinearAlgebra: diagm, factorize
 using PrecompileTools: @compile_workload, @setup_workload
 using SciMLBase: DAEProblem, SciMLBase
 
@@ -18,9 +18,9 @@ include("common.jl")
 const MAXORDER = 6
 const MAXIT = 10
 
-mutable struct JacData
-    a::Real
-    jac::Any # Jacobian matrix for the newton solver
+mutable struct JacData{T <: Real, M}
+    a::T
+    jac::M # Jacobian matrix for the newton solver
 end
 
 function dasslStep(
@@ -277,11 +277,20 @@ function newStepOrderContinuous(
     errors[k] = err
     ne = length(errors)         # == k or k+1
 
-    # we want to be conservative in our choice of order so we consider
-    # not only a monotone sequences but geometrically monotone
-    # sequences
-    errors_dec = all(diff([errors[i] for i in max(k - 2, 1):min(ne, maxorder)]) .< 0)
-    errors_inc = all(diff([errors[i] for i in max(k - 2, 1):min(ne, maxorder)]) .> 0)
+    # Check if errors form a decreasing or increasing sequence
+    # without allocating arrays
+    lo = max(k - 2, 1)
+    hi = min(ne, maxorder)
+    errors_dec = true
+    errors_inc = true
+    @inbounds for i in lo:(hi - 1)
+        if errors[i + 1] >= errors[i]
+            errors_dec = false
+        end
+        if errors[i + 1] <= errors[i]
+            errors_inc = false
+        end
+    end
 
     if ne == k + 1 && errors_dec
         # If we can estimate the error for k+1 order and the Taylor
@@ -355,6 +364,20 @@ end
 # step, we can estimate the error for order k+1.
 #
 
+# Check if all step sizes are equal without allocating diff array
+function _all_steps_equal(t_view)
+    if length(t_view) < 2
+        return true
+    end
+    first_step = t_view[2] - t_view[1]
+    @inbounds for i in 3:length(t_view)
+        if t_view[i] - t_view[i - 1] != first_step
+            return false
+        end
+    end
+    return true
+end
+
 # here t is an array of times    t=[t_1, ..., t_n, t_{n+1}]
 # and y is an array of solutions y=[y_1, ..., y_n, y_{n+1}]
 function errorEstimates(
@@ -374,22 +397,21 @@ function errorEstimates(
     # estimates the error for orders [k-2,k-1,k]
     errors = zeros(eltype(t), k)
 
-    for i in max(k - 2, 1):k
-        # @todo can this be optimized by inlining the body of
-        # interpolateHighestDerivative?
-        maxd = interpolateHighestDerivative(t[(end - (i + 1)):end], y[(end - (i + 1)):end])
+    @inbounds for i in max(k - 2, 1):k
+        # Use views to avoid allocation
+        t_view = @view t[(end - (i + 1)):end]
+        y_view = @view y[(end - (i + 1)):end]
+        maxd = interpolateHighestDerivative(t_view, y_view)
         errors[i] = h^(i + 1) * normy(maxd)
     end
 
     # compute the estimate the k+1 order only if all the steps were
     # made using the same stepsize
     if nsteps >= k + 3
-        hn = diff(t[(end - (k + 2)):end])
-        if all(hn .== hn[1])
-            maxd = interpolateHighestDerivative(
-                t[(end - (k + 2)):end],
-                y[(end - (k + 2)):end]
-            )
+        t_view = @view t[(end - (k + 2)):end]
+        if _all_steps_equal(t_view)
+            y_view = @view y[(end - (k + 2)):end]
+            maxd = interpolateHighestDerivative(t_view, y_view)
             push!(errors, h^(k + 2) * normy(maxd))
         end
     end
@@ -420,15 +442,17 @@ function stepper(
     )
     l = length(y[1])        # the number of dependent variables
 
-    # @todo this should be the view of the tail of the arrays t and y
-    tk = t[(end - ord + 1):end]
-    yk = y[(end - ord + 1):end]
+    # Use views to avoid allocations
+    tk = @view t[(end - ord + 1):end]
+    yk = @view y[(end - ord + 1):end]
 
     t_next = tk[end] + h_next
 
-    # I think there is an error in the book, the sum should be taken
-    # from j=1 to k+1 instead of j=1 to k
-    alphas = -sum([1 / j for j in 1:ord])
+    # Compute sum without allocating array
+    alphas = zero(eltype(t))
+    @inbounds for j in 1:ord
+        alphas -= 1 / j
+    end
 
     if length(y) == 1
         # this is the first step, we initialize y0 and dy0 with
@@ -471,10 +495,11 @@ function stepper(
         normy
     )     # the norm used to estimate error needs weights
 
-    alpha = Array{eltype(t)}(undef, ord + 1)
-
-    for i in 1:ord
-        alpha[i] = h_next / (t_next - t[end - i + 1])
+    # Compute alpha values and alpha0 without allocating array
+    alpha0 = zero(eltype(t))
+    @inbounds for i in 1:ord
+        alpha_i = h_next / (t_next - t[end - i + 1])
+        alpha0 -= alpha_i
     end
 
     if length(t) >= ord + 1
@@ -487,10 +512,9 @@ function stepper(
         t0 = t[1] - h_next
     end
 
-    alpha[ord + 1] = h_next / (t_next - t0)
+    alpha_ord_plus_1 = h_next / (t_next - t0)
 
-    alpha0 = -sum(alpha[1:ord])
-    M = max(alpha[ord + 1], abs.(alpha[ord + 1] + alphas - alpha0))
+    M = max(alpha_ord_plus_1, abs(alpha_ord_plus_1 + alphas - alpha0))
     err::eltype(t) = normy((yc - y0)) * M
 
     # status<0 means the modified Newton method did not converge
@@ -598,7 +622,12 @@ function newton_iteration(
 end
 
 function dassl_norm(v, wt)
-    return norm(v ./ wt) / sqrt(length(v))
+    # Avoid allocation by computing sum manually
+    s = zero(eltype(v))
+    @inbounds for i in eachindex(v, wt)
+        s += (v[i] / wt[i])^2
+    end
+    return sqrt(s / length(v))
 end
 
 function dassl_weights(y, reltol, abstol)
@@ -611,23 +640,19 @@ function interpolateAt(
         y::AbstractVector,
         x0::T
     ) where {T <: Real}
-    if length(x) != length(y)
-        error("x and y have to be of the same size.")
-    end
-
     n = length(x)
+    # Pre-allocate output and accumulate in-place
     p = zero(y[1])
 
-    for i in 1:n
+    @inbounds for i in 1:n
         Li = one(T)
         for j in 1:n
-            if j == i
-                continue
-            else
+            if j != i
                 Li *= (x0 - x[j]) / (x[i] - x[j])
             end
         end
-        p += Li * y[i]
+        # Use broadcasting in-place to avoid allocation
+        p = p .+ Li .* y[i]
     end
     return p
 end
@@ -639,31 +664,23 @@ function interpolateDerivativeAt(
         y::AbstractVector,
         x0::T
     ) where {T <: Real}
-    if length(x) != length(y)
-        error("x and y have to be of the same size.")
-    end
-
     n = length(x)
     p = zero(y[1])
 
-    for i in 1:n
+    @inbounds for i in 1:n
         dLi = zero(T)
         for k in 1:n
-            if k == i
-                continue
-            else
+            if k != i
                 dLi1 = one(T)
                 for j in 1:n
-                    if j == k || j == i
-                        continue
-                    else
+                    if j != k && j != i
                         dLi1 *= (x0 - x[j]) / (x[i] - x[j])
                     end
                 end
                 dLi += dLi1 / (x[i] - x[k])
             end
         end
-        p += dLi * y[i]
+        p = p .+ dLi .* y[i]
     end
     return p
 end
@@ -675,25 +692,19 @@ function interpolateHighestDerivative(
         x::AbstractVector,
         y::AbstractVector
     )
-    if length(x) != length(y)
-        error("x and y have to be of the same size.")
-    end
-
     n = length(x)
     p = zero(y[1])
 
-    for i in 1:n
+    @inbounds for i in 1:n
         Li = one(eltype(x))
         for j in 1:n
-            if j == i
-                continue
-            else
+            if j != i
                 Li *= 1 / (x[i] - x[j])
             end
         end
-        p += Li * y[i]
+        p = p .+ Li .* y[i]
     end
-    return factorial(n - 1) * p
+    return factorial(n - 1) .* p
 end
 
 # generate a function that computes approximate jacobian using forward
