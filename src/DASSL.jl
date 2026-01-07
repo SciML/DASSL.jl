@@ -2,6 +2,7 @@ module DASSL
 
 export dasslIterator, dasslSolve
 
+using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
 using DiffEqBase: DiffEqBase
 @reexport using DiffEqBase
@@ -42,6 +43,14 @@ function dasslStep(
         jacobian = numerical_jacobian(F, reltol, abstol, weights), # computes the quantity F/dy+a*dF/dy'
         args...
     ) where {T <: Number}
+    if !fast_scalar_indexing(y0)
+        throw(ArgumentError(
+            "DASSL requires arrays that support fast scalar indexing. " *
+            "GPU arrays (like CuArray, ROCArray) and JLArrays are not supported " *
+            "because the numerical Jacobian computation requires element-wise access. " *
+            "Please use CPU arrays (Vector, Array) or provide an analytical Jacobian."
+        ))
+    end
     n = length(y0)
     jd = JacData(zero(tstart), zeros(T, n, n)) # generate a dummy
     # jacobian, it will be replaced by
