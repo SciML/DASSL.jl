@@ -1,6 +1,32 @@
 using SciMLBase: AbstractDAEAlgorithm, AbstractDAEProblem, build_solution, isinplace
 
 abstract type DASSLDAEAlgorithm <: AbstractDAEAlgorithm end
+
+"""
+    dassl(; maxorder = 6, factorize_jacobian = true)
+
+Construct a DASSL algorithm for solving differential-algebraic equations (DAEs).
+
+DASSL is an implementation of the DASSL (Differential Algebraic System Solver) algorithm
+which uses backward differentiation formulas (BDF) to solve systems of the form
+`F(t,y,y')=0`.
+
+# Keyword Arguments
+- `maxorder::Integer = 6`: Maximum order of the BDF method. Valid values are 1-6.
+  BDF methods are stable up to 6th order.
+- `factorize_jacobian::Bool = true`: Whether to store the factorized Jacobian matrix.
+  This dramatically increases performance for large systems but may decrease performance
+  for small systems.
+
+# Example
+```julia
+using DASSL
+prob = DAEProblem(f, du0, u0, tspan)
+sol = solve(prob, dassl())
+```
+
+See also: [`dasslSolve`](@ref), [`dasslIterator`](@ref)
+"""
 struct dassl <: DASSLDAEAlgorithm
     maxorder::Any
     factorize_jacobian::Any

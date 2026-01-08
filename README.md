@@ -38,7 +38,7 @@ For more details on using this interface, [see the ODE tutorial](https://docs.sc
 Examples
 --------
 
-To solve a scalar equation `y'(t)+y(t)=0` with initial data `y(0)=0.0` up to time `t=10.0` run the following code
+To solve a scalar equation `y'(t)+y(t)=0` with initial data `y(0)=1.0` up to time `t=10.0` run the following code
 
 ```
 using DASSL
@@ -126,7 +126,7 @@ them are compatible with the names used in ODE package.
   define jacobian as
 
   ```
-  jacobian=(t,y,dy,a)->[[a,cos(y[1])] [-1,a]]
+  jacobian=(t,y,dy,a)->[[a -1]; [cos(y[1]) a]]
   ```
 
 - `maxorder=6` Apart from selecting the current step size DASSL method
