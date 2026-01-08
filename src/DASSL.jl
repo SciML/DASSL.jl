@@ -169,12 +169,105 @@ function dasslStep(
     return
 end
 
-# the iterator version of the dasslSolve
+"""
+    dasslIterator(F, y0, t0; kwargs...)
+
+Create an iterator that solves the DAE system `F(t,y,dy)=0` step-by-step.
+
+This function returns an iterator that yields `(t, y, dy)` tuples at each integration step.
+It is useful when you need to monitor the solution during integration or stop early based
+on solution values.
+
+# Arguments
+- `F`: The DAE residual function with signature `F(t,y,dy)` that returns the residual
+- `y0`: Initial value (scalar or vector)
+- `t0`: Initial time
+
+# Keyword Arguments
+- `reltol=1e-3`: Relative error tolerance
+- `abstol=1e-5`: Absolute error tolerance
+- `initstep=1e-4`: Initial step size
+- `maxstep=Inf`: Maximum step size
+- `minstep=0`: Minimum step size (integration stops if step size drops below this)
+- `maxorder=6`: Maximum order of the BDF method (1-6)
+- `dy0=zero(y0)`: Initial derivative guess
+- `tstop=Inf`: Time at which to stop integration
+- `jacobian`: Function `(t,y,dy,a)->dF/dy+a*dF/dy'` for computing the Jacobian
+- `factorize_jacobian=true`: Whether to factorize the Jacobian before storing
+
+# Example
+```julia
+F(t,y,dy) = dy .+ y
+
+# Stop integration when solution drops below 0.1
+for (t,y,dy) in dasslIterator(F, [1.0], 0.0)
+    if y[1] < 0.1
+        @show (t, y[1], dy[1])
+        break
+    end
+end
+```
+
+See also: [`dasslSolve`](@ref), [`dassl`](@ref)
+"""
 function dasslIterator(F, y0, t0; args...)
     return Channel((channel) -> dasslStep(channel, F, y0, t0; args...))
 end
 
-# solves the equation F with initial data y0 over for times t in tspan=[t0,t1]
+"""
+    dasslSolve(F, y0, tspan; dy0=zero(y0), kwargs...)
+
+Solve the DAE system `F(t,y,dy)=0` over the time span `tspan`.
+
+This is the main solving function for DASSL. It returns the complete solution
+over the specified time interval.
+
+# Arguments
+- `F`: The DAE residual function with signature `F(t,y,dy)` that returns the residual
+- `y0`: Initial value (scalar or vector)
+- `tspan`: Time span `[t0, tf]` over which to integrate
+
+# Keyword Arguments
+- `dy0=zero(y0)`: Initial derivative guess. For consistent initial conditions,
+  choose `y0` and `dy0` such that `F(t0,y0,dy0)=0`
+- `reltol=1e-3`: Relative error tolerance
+- `abstol=1e-5`: Absolute error tolerance
+- `initstep=1e-4`: Initial step size
+- `maxstep=Inf`: Maximum step size
+- `minstep=0`: Minimum step size (integration stops if step size drops below this)
+- `maxorder=6`: Maximum order of the BDF method (1-6)
+- `jacobian`: Function `(t,y,dy,a)->dF/dy+a*dF/dy'` for computing the Jacobian.
+  By default, uses finite differences
+- `factorize_jacobian=true`: Whether to factorize the Jacobian before storing
+- `norm=dassl_norm`: Custom norm function for error estimation
+- `weights=dassl_weights`: Custom weights function for error estimation
+
+# Returns
+- `(tout, yout, dyout)`: Tuple of time points, solution values, and derivative values
+
+# Examples
+```julia
+using DASSL
+
+# Scalar equation
+F(t,y,dy) = dy + y
+y0 = 1.0
+tspan = [0.0, 10.0]
+(tn, yn, dyn) = dasslSolve(F, y0, tspan)
+
+# Vector equation (pendulum)
+function F(t,y,dy)
+    [
+        dy[1] - y[2],      # y[1]=u,   y[2]=v
+        dy[2] + sin(y[1])  # dy[1]=u', dy[2]=v'
+    ]
+end
+y0 = [0.0, 1.0]
+(tn, yn, dyn) = dasslSolve(F, y0, tspan)
+```
+
+See also: [`dasslIterator`](@ref), [`dassl`](@ref)
+"""
 function dasslSolve(F, y0::AbstractVector, tspan; dy0 = zero(y0), args...)
     tout = Array{typeof(tspan[1])}(undef, 1)
     yout = Array{typeof(y0)}(undef, 1)
