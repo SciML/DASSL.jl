@@ -56,6 +56,10 @@ end
     include("explicit_imports.jl")
 end
 
+@testset "Interface Compatibility" begin
+    include("interface.jl")
+end
+
 include("convergence.jl")
 
 # Allocation tests - run separately to avoid interference with precompilation
