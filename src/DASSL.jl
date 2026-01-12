@@ -44,12 +44,14 @@ function dasslStep(
         args...
     ) where {T <: Number}
     if !fast_scalar_indexing(y0)
-        throw(ArgumentError(
-            "DASSL requires arrays that support fast scalar indexing. " *
-            "GPU arrays (like CuArray, ROCArray) and JLArrays are not supported " *
-            "because the numerical Jacobian computation requires element-wise access. " *
-            "Please use CPU arrays (Vector, Array) or provide an analytical Jacobian."
-        ))
+        throw(
+            ArgumentError(
+                "DASSL requires arrays that support fast scalar indexing. " *
+                    "GPU arrays (like CuArray, ROCArray) and JLArrays are not supported " *
+                    "because the numerical Jacobian computation requires element-wise access. " *
+                    "Please use CPU arrays (Vector, Array) or provide an analytical Jacobian."
+            )
+        )
     end
     n = length(y0)
     jd = JacData(zero(tstart), zeros(T, n, n)) # generate a dummy

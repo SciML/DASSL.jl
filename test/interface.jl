@@ -20,7 +20,7 @@ using JLArrays
         @test eltype(dyn[1]) == BigFloat
         @test length(tn) > 1
         # Check that the solution is approximately exp(-t) at t=1
-        @test isapprox(yn[end][1], exp(BigFloat(-1.0)), rtol = 1e-3)
+        @test isapprox(yn[end][1], exp(BigFloat(-1.0)), rtol = 1.0e-3)
     end
 
     @testset "BigFloat with Float64 time" begin
