@@ -1,6 +1,7 @@
 module DASSL
 
-export dasslIterator, dasslSolve
+export dasslIterator, dasslSolve, dasslSolve!
+export DASSLCache, alg_cache
 
 using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
@@ -14,10 +15,11 @@ import DiffEqBase: solve
 
 export dassl
 
-include("common.jl")
-
 const MAXORDER = 6
 const MAXIT = 10
+
+# Include cache and in-place implementations first
+include("cache.jl")
 
 mutable struct JacData{T <: Real, M}
     a::T
@@ -835,6 +837,12 @@ function numerical_jacobian(F, reltol, abstol, weights)
         return jac
     end
 end
+
+# Include in-place implementations (needs functions defined above)
+include("inplace.jl")
+
+# Include DiffEqBase interface (needs cache and inplace)
+include("common.jl")
 
 @setup_workload begin
     @compile_workload begin

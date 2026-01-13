@@ -62,6 +62,11 @@ end
 
 include("convergence.jl")
 
+# In-place tests
+@testset "In-Place Operations" begin
+    include("inplace_tests.jl")
+end
+
 # Allocation tests - run separately to avoid interference with precompilation
 if GROUP == "all" || GROUP == "nopre"
     include("alloc_tests.jl")

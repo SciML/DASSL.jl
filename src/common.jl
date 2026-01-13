@@ -47,44 +47,43 @@ function solve(
     end
 
     tspan = [prob.tspan[1], prob.tspan[2]]
-
-    #sizeu = size(prob.u0)
-    #sizedu = size(prob.du0)
     p = prob.p
 
-    ### Fix inplace functions to the non-inplace version
     if isinplace
-        f = (t, u, du) -> (out = similar(u); prob.f(out, du, u, p, t); out)
+        # In-place path: use pre-allocated cache for zero-allocation inner loop
+        cache = alg_cache(alg, prob.u0, p, tspan[1], Val(true))
+
+        # In-place function wrapper (no allocation per call!)
+        F! = (out, t, u, du) -> prob.f(out, du, u, p, t)
+
+        ts, timeseries, dus = dasslSolve!(
+            cache, F!, prob.u0, tspan,
+            abstol = abstol,
+            reltol = reltol,
+            maxstep = dtmax,
+            minstep = dtmin,
+            initstep = dt,
+            dy0 = prob.du0,
+            maxorder = alg.maxorder,
+            factorize_jacobian = alg.factorize_jacobian
+        )
     else
+        # Out-of-place path (unchanged, backward compatible)
         f = (t, u) -> prob.f(u, p, t)
+
+        ts, timeseries, dus = dasslSolve(
+            f, prob.u0, tspan,
+            abstol = abstol,
+            reltol = reltol,
+            maxstep = dtmax,
+            minstep = dtmin,
+            initstep = dt,
+            dy0 = prob.du0,
+            maxorder = alg.maxorder,
+            factorize_jacobian = alg.factorize_jacobian
+        )
     end
 
-    ### Finishing Routine
-
-    ts, timeseries,
-        dus = dasslSolve(
-        f, prob.u0, tspan,
-        abstol = abstol,
-        reltol = reltol,
-        maxstep = dtmax,
-        minstep = dtmin,
-        initstep = dt,
-        dy0 = prob.du0,
-        maxorder = alg.maxorder,
-        factorize_jacobian = alg.factorize_jacobian
-    )
-    #=
-    timeseries = Vector{uType}(0)
-    if typeof(prob.u0)<:Number
-        for i=1:length(ures)
-            push!(timeseries,ures[i][1])
-        end
-    else
-        for i=1:length(ures)
-            push!(timeseries,reshape(ures[i],sizeu))
-        end
-    end
-    =#
     return build_solution(
         prob, alg, ts, timeseries, du = dus,
         timeseries_errors = timeseries_errors
