@@ -56,6 +56,10 @@ end
     include("initialization_tests.jl")
 end
 
+@testset "ModelingToolkit DAE Initialization" begin
+    include("mtk_initialization_tests.jl")
+end
+
 @testset "Explicit Imports" begin
     include("explicit_imports.jl")
 end
