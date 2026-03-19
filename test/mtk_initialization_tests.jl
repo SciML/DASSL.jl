@@ -14,8 +14,9 @@ using ModelingToolkit: t_nounits as t, D_nounits as D
         @testset "DAEProblem{$iip}" for iip in [true, false]
             prob = DAEProblem(sys, [D(x) => cbrt(4), D(y) => -1 / cbrt(4), p => 1.0], (0.0, 0.4))
             
-            @testset "OverrideInit (via DefaultInit)" begin
-                # DASSL uses solve() not init() - test initialization through solve
+            @testset "DefaultInit (OverrideInit → CheckInit)" begin
+                # DefaultInit first runs OverrideInit to solve for initial conditions,
+                # then CheckInit to verify them (following Sundials v5 pattern)
                 sol = solve(prob, dassl())
                 @test SciMLBase.successful_retcode(sol)
                 @test sol[x, 1] ≈ 1.0

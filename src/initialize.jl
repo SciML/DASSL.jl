@@ -15,8 +15,10 @@ The default initialization algorithm for DASSL. It automatically selects the app
 initialization strategy based on the problem:
 
 - If the problem has `initialization_data` (e.g., from ModelingToolkit), use `OverrideInit`
+  to solve for consistent initial conditions, then `CheckInit` to verify them
 - Otherwise, use `CheckInit` to verify the initial conditions satisfy the DAE constraints
 
+This follows the same pattern as Sundials v5: OverrideInit → CheckInit.
 This is the recommended initialization algorithm for most use cases.
 """
 struct DefaultInit <: DAEInitializationAlgorithm end
@@ -24,12 +26,18 @@ struct DefaultInit <: DAEInitializationAlgorithm end
 """
     initialize_dae!(u0, du0, p, t0, prob, initializealg::DefaultInit, abstol, reltol)
 
-Default initialization: dispatches to OverrideInit if initialization_data exists,
-otherwise uses CheckInit.
+Default initialization: if initialization_data exists, first run OverrideInit to solve
+for consistent initial conditions, then CheckInit to verify them. Otherwise just CheckInit.
 """
 function initialize_dae!(u0, du0, p, t0, prob, initializealg::DefaultInit, abstol, reltol)
     if has_initialization_data(prob.f)
-        return initialize_dae!(u0, du0, p, t0, prob, OverrideInit(), abstol, reltol)
+        # First, solve for initial conditions with OverrideInit
+        u0, du0, p, success = initialize_dae!(u0, du0, p, t0, prob, OverrideInit(), abstol, reltol)
+        if !success
+            return u0, du0, p, false
+        end
+        # Then, verify with CheckInit
+        return initialize_dae!(u0, du0, p, t0, prob, CheckInit(), abstol, reltol)
     else
         return initialize_dae!(u0, du0, p, t0, prob, CheckInit(), abstol, reltol)
     end
