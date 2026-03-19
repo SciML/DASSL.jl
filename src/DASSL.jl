@@ -2,6 +2,7 @@ module DASSL
 
 export dasslIterator, dasslSolve, dasslSolve!
 export DASSLCache, alg_cache
+export DefaultInit
 
 using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
@@ -10,6 +11,7 @@ using DiffEqBase: DiffEqBase
 using LinearAlgebra: diagm, factorize
 using PrecompileTools: @compile_workload, @setup_workload
 using SciMLBase: DAEProblem, SciMLBase
+using SymbolicIndexingInterface: SymbolicIndexingInterface
 
 import DiffEqBase: solve
 
@@ -840,6 +842,9 @@ end
 
 # Include in-place implementations (needs functions defined above)
 include("inplace.jl")
+
+# Include DAE initialization support
+include("initialize.jl")
 
 # Include DiffEqBase interface (needs cache and inplace)
 include("common.jl")

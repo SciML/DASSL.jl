@@ -52,6 +52,10 @@ end
     include("common.jl")
 end
 
+@testset "DAE Initialization" begin
+    include("initialization_tests.jl")
+end
+
 @testset "Explicit Imports" begin
     include("explicit_imports.jl")
 end
