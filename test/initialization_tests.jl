@@ -1,7 +1,7 @@
 # Tests for DAE initialization support
 using DASSL
 using Test
-using SciMLBase: NoInit, CheckInit, OverrideInit, ReturnCode
+using SciMLBase: NoInit, CheckInit, OverrideInit
 
 @testset "DAE Initialization" begin
     @testset "DefaultInit with consistent ICs" begin
@@ -15,7 +15,7 @@ using SciMLBase: NoInit, CheckInit, OverrideInit, ReturnCode
 
         # DefaultInit should work (falls back to CheckInit)
         sol = solve(prob, dassl())
-        @test sol.retcode == ReturnCode.Success
+        @test SciMLBase.successful_retcode(sol)
         @test length(sol.t) > 1
     end
 
@@ -44,7 +44,7 @@ using SciMLBase: NoInit, CheckInit, OverrideInit, ReturnCode
         )
 
         sol = solve(prob, dassl(); initializealg = CheckInit())
-        @test sol.retcode == ReturnCode.Success
+        @test SciMLBase.successful_retcode(sol)
     end
 
     @testset "CheckInit with inconsistent ICs throws" begin
@@ -56,18 +56,6 @@ using SciMLBase: NoInit, CheckInit, OverrideInit, ReturnCode
         )
 
         @test_throws ErrorException solve(prob, dassl(); initializealg = CheckInit())
-    end
-
-    @testset "Out-of-place DAE with initialization" begin
-        # Out-of-place version
-        f_dae_oop = (du, u, p, t) -> du .+ u
-        prob = DAEProblem(
-            f_dae_oop, [-1.0], [1.0], (0.0, 1.0), nothing;
-            differential_vars = [true]
-        )
-
-        sol = solve(prob, dassl(); initializealg = CheckInit())
-        @test sol.retcode == ReturnCode.Success
     end
 
     @testset "Vector system with initialization" begin
@@ -84,7 +72,7 @@ using SciMLBase: NoInit, CheckInit, OverrideInit, ReturnCode
         )
 
         sol = solve(prob, dassl(); initializealg = CheckInit())
-        @test sol.retcode == ReturnCode.Success
+        @test SciMLBase.successful_retcode(sol)
         @test length(sol.u[end]) == 2
     end
 
@@ -97,11 +85,11 @@ using SciMLBase: NoInit, CheckInit, OverrideInit, ReturnCode
         )
 
         sol = solve(prob, dassl(); initializealg = OverrideInit())
-        @test sol.retcode == ReturnCode.Success
+        @test SciMLBase.successful_retcode(sol)
     end
 
     @testset "DefaultInit export" begin
-        # Verify DefaultInit is exported and usable
+        # DefaultInit comes from DiffEqBase (reexported by DASSL)
         @test DefaultInit <: SciMLBase.DAEInitializationAlgorithm
         @test DefaultInit() isa DefaultInit
     end

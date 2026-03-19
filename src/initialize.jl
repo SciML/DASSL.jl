@@ -3,25 +3,11 @@
 
 using SciMLBase: NoInit, CheckInit, OverrideInit, DAEInitializationAlgorithm,
     get_initial_values, isinplace, ReturnCode
+using DiffEqBase: DefaultInit
 using LinearAlgebra: norm
 
 # Import has_initialization_data - it checks if the function has initialization_data field set
 import SciMLBase: has_initialization_data
-
-"""
-    DefaultInit
-
-The default initialization algorithm for DASSL. It automatically selects the appropriate
-initialization strategy based on the problem:
-
-- If the problem has `initialization_data` (e.g., from ModelingToolkit), use `OverrideInit`
-  to solve for consistent initial conditions, then `CheckInit` to verify them
-- Otherwise, use `CheckInit` to verify the initial conditions satisfy the DAE constraints
-
-This follows the same pattern as Sundials v5: OverrideInit → CheckInit.
-This is the recommended initialization algorithm for most use cases.
-"""
-struct DefaultInit <: DAEInitializationAlgorithm end
 
 """
     initialize_dae!(u0, du0, p, t0, prob, initializealg::DefaultInit, abstol, reltol)

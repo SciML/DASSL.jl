@@ -2,7 +2,6 @@ module DASSL
 
 export dasslIterator, dasslSolve, dasslSolve!
 export DASSLCache, alg_cache
-export DefaultInit
 
 using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
@@ -855,7 +854,7 @@ include("common.jl")
         # This is the most common use case
         f_dae = (out, du, u, p, t) -> (out .= du .+ u)
         prob = DAEProblem(
-            f_dae, [0.0], [1.0], (0.0, 0.1), nothing;
+            f_dae, [-1.0], [1.0], (0.0, 0.1), nothing;
             differential_vars = [true]
         )
         sol = solve(prob, dassl())
@@ -866,7 +865,7 @@ include("common.jl")
             out[2] = du[2] + u[1] - u[2]
         end
         prob2 = DAEProblem(
-            f_dae2, [0.0, 0.0], [1.0, 0.5], (0.0, 0.1), nothing;
+            f_dae2, [-1.5, -0.5], [1.0, 0.5], (0.0, 0.1), nothing;
             differential_vars = [true, true]
         )
         sol2 = solve(prob2, dassl())

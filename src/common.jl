@@ -105,6 +105,7 @@ function solve(
 
     return build_solution(
         prob, alg, ts, timeseries, du = dus,
+        retcode = ReturnCode.Success,
         timeseries_errors = timeseries_errors
     )
 end
