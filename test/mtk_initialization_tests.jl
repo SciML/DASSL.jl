@@ -1,7 +1,7 @@
 # Tests for ModelingToolkit DAE initialization support
 using DASSL
 using Test
-using ModelingToolkit, SciMLBase
+using ModelingToolkit, SciMLBase, NonlinearSolve
 using SymbolicIndexingInterface
 using ModelingToolkit: t_nounits as t, D_nounits as D
 

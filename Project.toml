@@ -19,6 +19,7 @@ BenchmarkTools = "1"
 DiffEqBase = "6.5"
 ExplicitImports = "1"
 JLArrays = "0.3"
+NonlinearSolve = "4"
 PrecompileTools = "1"
 Reexport = "0.2, 1.0"
 SciMLBase = "2"
@@ -32,7 +33,8 @@ DAEProblemLibrary = "dfb8ca35-80a1-48ba-a605-84916a45b4f8"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
+NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AllocCheck", "BenchmarkTools", "DAEProblemLibrary", "ExplicitImports", "JLArrays", "ModelingToolkit", "Test"]
+test = ["AllocCheck", "BenchmarkTools", "DAEProblemLibrary", "ExplicitImports", "JLArrays", "ModelingToolkit", "NonlinearSolve", "Test"]
