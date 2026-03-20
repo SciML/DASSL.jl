@@ -1,5 +1,5 @@
 using SciMLBase: AbstractDAEAlgorithm, AbstractDAEProblem, build_solution, isinplace,
-    DAEInitializationAlgorithm, ReturnCode
+    DAEInitializationAlgorithm, ReturnCode, remake
 
 abstract type DASSLDAEAlgorithm <: AbstractDAEAlgorithm end
 
@@ -57,6 +57,12 @@ function solve(
 
     # Run DAE initialization
     u0, du0, p, init_success = initialize_dae!(u0, du0, p, t0, prob, initializealg, abstol, reltol)
+
+    # Remake problem with updated initial conditions and parameters
+    # so that build_solution stores the correct values (e.g., solved parameters)
+    if p !== prob.p || u0 !== prob.u0
+        prob = remake(prob; u0 = u0, du0 = du0, p = p)
+    end
 
     if !init_success
         # Return a solution with InitialFailure retcode
