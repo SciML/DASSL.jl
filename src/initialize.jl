@@ -1,7 +1,7 @@
 # DAE initialization support for DASSL.jl
 # Following the pattern from Sundials.jl: https://github.com/SciML/Sundials.jl/blob/master/src/common_interface/initialize.jl
 
-using SciMLBase: NoInit, CheckInit, OverrideInit, DAEInitializationAlgorithm,
+using SciMLBase: NoInit, CheckInit, OverrideInit,
     get_initial_values, isinplace, ReturnCode
 using DiffEqBase: DefaultInit
 using LinearAlgebra: norm

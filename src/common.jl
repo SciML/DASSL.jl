@@ -1,5 +1,5 @@
 using SciMLBase: AbstractDAEAlgorithm, AbstractDAEProblem, build_solution, isinplace,
-    DAEInitializationAlgorithm, ReturnCode, remake
+    ReturnCode, remake
 
 abstract type DASSLDAEAlgorithm <: AbstractDAEAlgorithm end
 
