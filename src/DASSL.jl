@@ -10,6 +10,7 @@ using DiffEqBase: DiffEqBase
 using LinearAlgebra: diagm, factorize
 using PrecompileTools: @compile_workload, @setup_workload
 using SciMLBase: DAEProblem, SciMLBase
+using SymbolicIndexingInterface: SymbolicIndexingInterface
 
 import DiffEqBase: solve
 
@@ -841,6 +842,9 @@ end
 # Include in-place implementations (needs functions defined above)
 include("inplace.jl")
 
+# Include DAE initialization support
+include("initialize.jl")
+
 # Include DiffEqBase interface (needs cache and inplace)
 include("common.jl")
 
@@ -850,7 +854,7 @@ include("common.jl")
         # This is the most common use case
         f_dae = (out, du, u, p, t) -> (out .= du .+ u)
         prob = DAEProblem(
-            f_dae, [0.0], [1.0], (0.0, 0.1), nothing;
+            f_dae, [-1.0], [1.0], (0.0, 0.1), nothing;
             differential_vars = [true]
         )
         sol = solve(prob, dassl())
@@ -861,7 +865,7 @@ include("common.jl")
             out[2] = du[2] + u[1] - u[2]
         end
         prob2 = DAEProblem(
-            f_dae2, [0.0, 0.0], [1.0, 0.5], (0.0, 0.1), nothing;
+            f_dae2, [-1.5, -0.5], [1.0, 0.5], (0.0, 0.1), nothing;
             differential_vars = [true, true]
         )
         sol2 = solve(prob2, dassl())
