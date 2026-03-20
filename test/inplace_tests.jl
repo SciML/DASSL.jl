@@ -107,7 +107,7 @@ using Test
         # Test through standard interface with in-place problem
         f_dae = (out, du, u, p, t) -> (out .= du .+ u)
         prob = DAEProblem(
-            f_dae, [0.0], [1.0], (0.0, 1.0), nothing;
+            f_dae, [-1.0], [1.0], (0.0, 1.0), nothing;
             differential_vars = [true]
         )
         sol = solve(prob, dassl())
