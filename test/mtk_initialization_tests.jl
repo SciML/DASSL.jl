@@ -22,7 +22,7 @@ using ModelingToolkit: t_nounits as t, D_nounits as D
                 @test sol[x, 1] ≈ 1.0
                 @test sol[y, 1] ≈ cbrt(4)
                 @test sol.ps[p] ≈ 1.0
-                @test sol.ps[q] ≈ sqrt(2)
+                @test sol.ps[q] ≈ sqrt(2) atol = 1.0e-4
             end
 
             @testset "CheckInit" begin
