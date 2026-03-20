@@ -7,7 +7,7 @@ using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
 using DiffEqBase: DiffEqBase
 @reexport using DiffEqBase
-using LinearAlgebra: diagm, factorize
+using LinearAlgebra: I, diagm, factorize, lu
 using PrecompileTools: @compile_workload, @setup_workload
 using SciMLBase: DAEProblem, SciMLBase
 using SymbolicIndexingInterface: SymbolicIndexingInterface

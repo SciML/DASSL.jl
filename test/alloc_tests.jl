@@ -153,8 +153,30 @@ using Test
         @test allocs == 0
     end
 
+    @testset "In-place history access - zero allocations" begin
+        y0 = [1.0, 2.0]
+        cache = DASSL.alg_cache(dassl(), y0, nothing, 0.0, Val(true))
+
+        # Add some history entries
+        DASSL.clear_history!(cache)
+        DASSL.push_history!(cache, 0.0, y0, zeros(2))
+        DASSL.push_history!(cache, 0.1, y0 .+ 0.1, zeros(2))
+        DASSL.push_history!(cache, 0.2, y0 .+ 0.2, zeros(2))
+
+        # Warmup
+        DASSL.get_history_t!(cache, 2)
+        DASSL.get_history_y!(cache, 2)
+
+        # Test allocations - views into pre-allocated buffers should be zero-alloc
+        allocs = @allocated DASSL.get_history_t!(cache, 2)
+        @test allocs == 0
+
+        allocs = @allocated DASSL.get_history_y!(cache, 2)
+        @test allocs == 0
+    end
+
     @testset "In-place stepper! allocation check" begin
-        using LinearAlgebra: factorize
+        using LinearAlgebra: lu, factorize
 
         y0 = [1.0]
         cache = DASSL.alg_cache(dassl(), y0, nothing, 0.0, Val(true))
@@ -173,7 +195,7 @@ using Test
 
         # Initialize Jacobian
         DASSL.numerical_jacobian!(cache.jac, cache, F_step!, 0.0, y0, dy0, 10.0, cache.wt)
-        cache.jac_factorized = factorize(cache.jac)
+        cache.jac_factorized = lu(cache.jac; check = false)
         cache.a = 10.0
 
         normy(v) = DASSL.dassl_norm(v, cache.wt)
@@ -186,11 +208,11 @@ using Test
         DASSL.weights!(cache.wt, cache.yn, 1.0e-3, 1.0e-5)
 
         # Second step should have minimal allocations
-        # Note: Some small allocations may occur due to closure captures
+        # With lu! and pre-allocated work buffers, allocations should be very small
         allocs = @allocated DASSL.stepper!(cache, 1, 0.1, F_step!, normy, 6)
 
-        # Allow small allocations for closure captures but catch major regressions
-        # The key is that we're not allocating large arrays per step
+        # Per-step allocations include LU factorization wrapper + small closure overhead
+        # lu() allocates a matrix copy + ipiv vector + LU struct per Jacobian refresh
         @test allocs < 1024  # Less than 1 KB per step
     end
 
