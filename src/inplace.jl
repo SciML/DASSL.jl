@@ -1,7 +1,7 @@
 # In-place implementations of DASSL core functions
 # These operate on pre-allocated cache buffers for zero-allocation integration
 
-using LinearAlgebra: ldiv!, factorize
+using LinearAlgebra: ldiv!
 
 # ============================================================================
 # In-place interpolation functions
@@ -242,7 +242,7 @@ function corrector!(
     if need_new_jac
         # Compute fresh Jacobian
         jac_new!(cache.jac)
-        cache.jac_factorized = factorize(cache.jac)
+        cache.jac_factorized = lu(cache.jac; check = false)
         cache.a = a_new
 
         # Newton iteration with fresh Jacobian
@@ -268,7 +268,7 @@ function corrector!(
         if status < 0
             # Retry with fresh Jacobian
             jac_new!(cache.jac)
-            cache.jac_factorized = factorize(cache.jac)
+            cache.jac_factorized = lu(cache.jac; check = false)
             cache.a = a_new
 
             function f_newton_solve_new!(out, y)
@@ -304,9 +304,9 @@ function stepper!(
         normy,
         maxorder::Integer
     )
-    # Get history for interpolation
-    tk = get_history_t(cache, ord)
-    yk = get_history_y(cache, ord)
+    # Get history for interpolation (zero-allocation via work buffers)
+    tk = get_history_t!(cache, ord)
+    yk = get_history_y!(cache, ord)
 
     t_next = tk[end] + h_next
 
@@ -396,19 +396,19 @@ function errorEstimates!(
     nsteps = cache.hist_len
     h = get_t_at(cache, nsteps) - get_t_at(cache, nsteps - 1)
 
-    # Get views for interpolation
+    # Get views for interpolation (zero-allocation via work buffers)
     for order in max(k - 2, 1):k
-        t_view = get_history_t(cache, order + 2)
-        y_view = get_history_y(cache, order + 2)
+        t_view = get_history_t!(cache, order + 2)
+        y_view = get_history_y!(cache, order + 2)
         interpolateHighestDerivative!(cache.ytmp, t_view, y_view)
         errors[order] = h^(order + 1) * normy(cache.ytmp)
     end
 
     # Compute k+1 order estimate if steps are equal
     if nsteps >= k + 3
-        t_view = get_history_t(cache, k + 3)
+        t_view = get_history_t!(cache, k + 3)
         if _all_steps_equal(t_view)
-            y_view = get_history_y(cache, k + 3)
+            y_view = get_history_y!(cache, k + 3)
             interpolateHighestDerivative!(cache.ytmp, t_view, y_view)
             if length(errors) > k
                 errors[k + 1] = h^(k + 2) * normy(cache.ytmp)
@@ -417,6 +417,91 @@ function errorEstimates!(
     end
 
     return errors
+end
+
+"""
+    errorEstimates_cache!(cache, normy, k) -> ne
+
+Compute error estimates for orders k-2 through k (and possibly k+1) using
+pre-allocated cache.errors_work buffer. Returns the number of valid estimates.
+"""
+function errorEstimates_cache!(
+        cache::DASSLCache,
+        normy,
+        k::Integer
+    )
+    nsteps = cache.hist_len
+    h = get_t_at(cache, nsteps) - get_t_at(cache, nsteps - 1)
+
+    errors = cache.errors_work
+    @inbounds for i in 1:k
+        errors[i] = zero(eltype(errors))
+    end
+
+    @inbounds for order in max(k - 2, 1):k
+        t_view = get_history_t!(cache, order + 2)
+        y_view = get_history_y!(cache, order + 2)
+        interpolateHighestDerivative!(cache.ytmp, t_view, y_view)
+        errors[order] = h^(order + 1) * normy(cache.ytmp)
+    end
+
+    # Estimate k+1 order if enough equal-sized steps
+    ne = k
+    if nsteps >= k + 3
+        t_view = get_history_t!(cache, k + 3)
+        if _all_steps_equal(t_view)
+            y_view = get_history_y!(cache, k + 3)
+            interpolateHighestDerivative!(cache.ytmp, t_view, y_view)
+            errors[k + 1] = h^(k + 2) * normy(cache.ytmp)
+            ne = k + 1
+        end
+    end
+
+    return ne
+end
+
+"""
+    newStepOrderContinuous_cache!(cache, normy, err, k, maxorder)
+
+In-place version of newStepOrderContinuous using pre-allocated cache buffers.
+Zero-allocation order/step-size selection.
+"""
+function newStepOrderContinuous_cache!(
+        cache::DASSLCache,
+        normy,
+        err,
+        k::Integer,
+        maxorder::Integer
+    )
+    ne = errorEstimates_cache!(cache, normy, k)
+    errors = cache.errors_work
+    errors[k] = err
+
+    lo = max(k - 2, 1)
+    hi = min(ne, maxorder)
+    errors_dec = true
+    errors_inc = true
+    @inbounds for i in lo:(hi - 1)
+        if errors[i + 1] >= errors[i]
+            errors_dec = false
+        end
+        if errors[i + 1] <= errors[i]
+            errors_inc = false
+        end
+    end
+
+    if ne == k + 1 && errors_dec
+        order = min(k + 1, maxorder)
+    elseif ne > 1 && errors_inc
+        order = max(k - 1, 1)
+    else
+        order = k
+    end
+
+    est = errors[order]
+    r = (2 * est + 1 / 10000)^(-1 / (order + 1))
+
+    return r, order
 end
 
 # ============================================================================
@@ -472,7 +557,7 @@ function dasslSolve!(
     # Initialize weights and Jacobian for first step improvement
     weights!(cache.wt, y0, reltol, abstol)
     numerical_jacobian!(cache.jac, cache, F!, tspan[1], y0, dy0, 1 / initstep, cache.wt)
-    cache.jac_factorized = factorize(cache.jac)
+    cache.jac_factorized = lu(cache.jac; check = false)
     cache.a = 1 / initstep
 
     # Improve initial dy0 estimate (one stepper iteration)
@@ -610,10 +695,8 @@ function newStepOrder_cache(
         end
 
     else
-        # Use continuous order selection
-        t_hist = get_history_t(cache, available_steps)
-        y_hist = get_history_y(cache, available_steps)
-        (r, order) = newStepOrderContinuous(t_hist, y_hist, normy, err, k, maxorder)
+        # Use continuous order selection (zero-allocation via cache buffers)
+        (r, order) = newStepOrderContinuous_cache!(cache, normy, err, k, maxorder)
         r = normalizeStepSize(r, num_fail)
 
         if num_fail > 0

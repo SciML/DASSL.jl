@@ -29,8 +29,8 @@ sol = solve(prob, dassl())
 See also: [`dasslSolve`](@ref), [`dasslIterator`](@ref)
 """
 struct dassl <: DASSLDAEAlgorithm
-    maxorder::Any
-    factorize_jacobian::Any
+    maxorder::Int
+    factorize_jacobian::Bool
 end
 
 dassl(; maxorder = 6, factorize_jacobian = true) = dassl(maxorder, factorize_jacobian)
