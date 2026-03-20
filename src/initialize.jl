@@ -97,9 +97,9 @@ function initialize_dae!(u0, du0, p, t0, prob, initializealg::OverrideInit, abst
         return u0, du0, p, true
     end
 
-    # Create a simple value provider for get_initial_values
-    # This provides state_values and parameter_values interfaces
-    valp = DASSLValueProvider(u0, p, t0)
+    # Create a value provider for get_initial_values
+    # This provides state_values, parameter_values, and symbolic_container interfaces
+    valp = DASSLValueProvider(u0, p, t0, f)
 
     # Determine tolerances - algorithm takes priority, then fall back to solver tolerances
     _abstol = something(initializealg.abstol, abstol)
@@ -130,16 +130,20 @@ function initialize_dae!(u0, du0, p, t0, prob, initializealg::OverrideInit, abst
     return u0, du0, p_new, success
 end
 
-# Simple value provider for DASSL that implements the SymbolicIndexingInterface
-struct DASSLValueProvider{U, P, T}
+# Value provider for DASSL that implements the SymbolicIndexingInterface.
+# Stores the SciMLFunction so MTK's get_scimlfn can find it via symbolic_container.
+struct DASSLValueProvider{U, P, T, F}
     u::U
     p::P
     t::T
+    f::F
 end
 
 # Implement required interfaces from SymbolicIndexingInterface
-import SymbolicIndexingInterface: state_values, parameter_values, current_time
+import SymbolicIndexingInterface: state_values, parameter_values, current_time,
+    symbolic_container
 
 state_values(vp::DASSLValueProvider) = vp.u
 parameter_values(vp::DASSLValueProvider) = vp.p
 current_time(vp::DASSLValueProvider) = vp.t
+symbolic_container(vp::DASSLValueProvider) = vp.f
