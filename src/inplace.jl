@@ -537,6 +537,7 @@ function dasslSolve!(
         dy0 = zero(y0),
         norm = dassl_norm,
         factorize_jacobian = true,
+        verbose = DEVerbosity(Standard()),
         kwargs...
     ) where {T}
 
@@ -591,8 +592,10 @@ function dasslSolve!(
         h = min(h, maxstep, tspan[2] - tout[end])
 
         if h < hmin
+            @SciMLMessage("Stepsize too small (h=$h at t=$(tout[end]))", verbose, :stepsize_too_small)
             throw(DomainError("Stepsize too small (h=$h at t=$(tout[end])."))
         elseif num_fail >= -2 / 3 * log(eps(one(tspan[1])))
+            @SciMLMessage("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]))", verbose, :too_many_failures)
             throw(ErrorException("Too many ($num_fail) failed steps"))
         end
 
@@ -605,6 +608,7 @@ function dasslSolve!(
 
         if status < 0
             # Newton failed, reduce step
+            @SciMLMessage("Newton iteration failed to converge (h=$h at t=$(tout[end]))", verbose, :step_rejection)
             num_fail += 1
             num_rejected += 1
             h *= 1 / 4
@@ -612,6 +616,7 @@ function dasslSolve!(
 
         elseif err > 1
             # Error too large, reduce step
+            @SciMLMessage("Local error too large, rejecting step (err=$err, h=$h at t=$(tout[end]))", verbose, :step_rejection)
             num_fail += 1
             num_rejected += 1
 

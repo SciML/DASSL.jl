@@ -5,11 +5,12 @@ export DASSLCache, alg_cache
 
 using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
-using DiffEqBase: DiffEqBase
+using DiffEqBase: DiffEqBase, DEVerbosity
 @reexport using DiffEqBase
 using LinearAlgebra: I, diagm, factorize, lu
 using PrecompileTools: @compile_workload, @setup_workload
 using SciMLBase: DAEProblem, SciMLBase
+using SciMLLogging: SciMLLogging, Standard, @SciMLMessage
 using SymbolicIndexingInterface: SymbolicIndexingInterface
 
 import DiffEqBase: solve
@@ -21,6 +22,7 @@ const MAXIT = 10
 
 # Include cache and in-place implementations first
 include("cache.jl")
+include("verbosity.jl")
 
 mutable struct JacData{T <: Real, M}
     a::T
@@ -44,6 +46,7 @@ function dasslStep(
         weights = dassl_weights,
         factorize_jacobian = true, # whether to store factorized version of jacobian
         jacobian = numerical_jacobian(F, reltol, abstol, weights), # computes the quantity F/dy+a*dF/dy'
+        verbose = DEVerbosity(Standard()),
         args...
     ) where {T <: Number}
     if !fast_scalar_indexing(y0)
@@ -98,9 +101,11 @@ function dasslStep(
         h = min(h, maxstep, tstop - tout[end])
 
         if h < hmin
+            @SciMLMessage("Stepsize too small (h=$h at t=$(tout[end]))", verbose, :stepsize_too_small)
             throw(DomainError("Stepsize too small (h=$h at t=$(tout[end])."))
             break
         elseif num_fail >= -2 / 3 * log(eps(one(tstart)))
+            @SciMLMessage("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end]))", verbose, :too_many_failures)
             throw(ErrorException("Too many ($num_fail) failed steps in a row (h=$h at t=$(tout[end])."))
             break
         end
@@ -123,6 +128,7 @@ function dasslStep(
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
             # the step size and try again
+            @SciMLMessage("Newton iteration failed to converge (h=$h at t=$(tout[end]))", verbose, :step_rejection)
 
             # increase the failure counter
             num_fail += 1
@@ -135,6 +141,7 @@ function dasslStep(
         elseif err > 1
             # local error is too large.  Step is rejected, and we try
             # again with new step size and order.
+            @SciMLMessage("Local error too large, rejecting step (err=$err, h=$h at t=$(tout[end]))", verbose, :step_rejection)
 
             # increase the failure counter
             num_fail += 1
