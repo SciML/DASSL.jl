@@ -31,9 +31,11 @@ See also: [`dasslSolve`](@ref), [`dasslIterator`](@ref)
 struct dassl <: DASSLDAEAlgorithm
     maxorder::Int
     factorize_jacobian::Bool
+    verbose::DEVerbosity
 end
 
-dassl(; maxorder = 6, factorize_jacobian = true) = dassl(maxorder, factorize_jacobian)
+dassl(; maxorder = 6, factorize_jacobian = true, verbose = Standard()) =
+    dassl(maxorder, factorize_jacobian, _process_verbose_param(verbose))
 
 function solve(
         prob::AbstractDAEProblem{uType, duType, tupType, isinplace},
@@ -90,7 +92,8 @@ function solve(
             initstep = dt,
             dy0 = du0,
             maxorder = alg.maxorder,
-            factorize_jacobian = alg.factorize_jacobian
+            factorize_jacobian = alg.factorize_jacobian,
+            verbose = alg.verbose
         )
     else
         # Out-of-place path (unchanged, backward compatible)
@@ -105,7 +108,8 @@ function solve(
             initstep = dt,
             dy0 = du0,
             maxorder = alg.maxorder,
-            factorize_jacobian = alg.factorize_jacobian
+            factorize_jacobian = alg.factorize_jacobian,
+            verbose = alg.verbose
         )
     end
 
