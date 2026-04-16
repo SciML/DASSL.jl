@@ -5,7 +5,7 @@ export DASSLCache, alg_cache
 
 using ArrayInterface: fast_scalar_indexing
 using Reexport: @reexport
-using DiffEqBase: DiffEqBase, DEVerbosity
+using DiffEqBase: DiffEqBase, DEVerbosity, _process_verbose_param
 @reexport using DiffEqBase
 using LinearAlgebra: I, diagm, factorize, lu
 using PrecompileTools: @compile_workload, @setup_workload
@@ -22,7 +22,6 @@ const MAXIT = 10
 
 # Include cache and in-place implementations first
 include("cache.jl")
-include("verbosity.jl")
 
 mutable struct JacData{T <: Real, M}
     a::T
