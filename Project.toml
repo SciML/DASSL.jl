@@ -1,6 +1,6 @@
 name = "DASSL"
 uuid = "e993076c-0cfd-5d6b-a1ac-36489fdf7917"
-version = "2.11.0"
+version = "2.12.0"
 authors = ["Chris Rackauckas <accounts@chrisrackauckas.com>"]
 
 [deps]
@@ -17,7 +17,7 @@ SymbolicIndexingInterface = "2efcf032-c050-4f8e-a9bb-153293bab1f5"
 AllocCheck = "0.2"
 ArrayInterface = "7"
 BenchmarkTools = "1"
-DiffEqBase = "6.217"
+DiffEqBase = "6.217, 7"
 ExplicitImports = "1"
 JLArrays = "0.3"
 NonlinearSolve = "4"

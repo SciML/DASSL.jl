@@ -127,7 +127,7 @@ function dasslStep(
         if status < 0
             # Early failure: Newton iteration failed to converge, reduce
             # the step size and try again
-            @SciMLMessage("Newton iteration failed to converge (h=$h at t=$(tout[end]))", verbose, :step_rejection)
+            @SciMLMessage("Newton iteration failed to converge (h=$h at t=$(tout[end]))", verbose, :step_rejected)
 
             # increase the failure counter
             num_fail += 1
@@ -140,7 +140,7 @@ function dasslStep(
         elseif err > 1
             # local error is too large.  Step is rejected, and we try
             # again with new step size and order.
-            @SciMLMessage("Local error too large, rejecting step (err=$err, h=$h at t=$(tout[end]))", verbose, :step_rejection)
+            @SciMLMessage("Local error too large, rejecting step (err=$err, h=$h at t=$(tout[end]))", verbose, :step_rejected)
 
             # increase the failure counter
             num_fail += 1
