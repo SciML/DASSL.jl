@@ -96,8 +96,9 @@ function solve(
             verbose = alg.verbose
         )
     else
-        # Out-of-place path (unchanged, backward compatible)
-        f = (t, u) -> prob.f(u, p, t)
+        # Out-of-place path: residual must be 3-arg (t, u, du) for the DAE solver,
+        # mirroring the in-place F!(out, t, u, du) wiring above (was 2-arg ODE form).
+        f = (t, u, du) -> prob.f(du, u, p, t)
 
         ts, timeseries, dus = dasslSolve(
             f, u0, tspan,

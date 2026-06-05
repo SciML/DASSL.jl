@@ -5,15 +5,22 @@ using DASSL
 using AllocCheck
 using Test
 
+# `@allocated expr` measured directly in a testset body runs at (non-const) global
+# scope, which inflates the count above the function's true cost: a bits return value
+# (e.g. a `Float64`) gets boxed, and escape analysis can't elide the `SubArray` wrapper
+# of a returned view. Measuring inside a specialized function barrier (typed-local args,
+# direct call) reflects real call-site behavior. These stay strict zero-allocation
+# guards: a genuine data copy still allocates inside the barrier (e.g. `x[1:n]` returns a
+# fresh array), so a view->copy regression is still caught.
+norm_allocs(v, wt) = (DASSL.dassl_norm(v, wt); @allocated DASSL.dassl_norm(v, wt))
+hist_t_allocs(cache, ord) = (DASSL.get_history_t!(cache, ord); @allocated DASSL.get_history_t!(cache, ord))
+hist_y_allocs(cache, ord) = (DASSL.get_history_y!(cache, ord); @allocated DASSL.get_history_y!(cache, ord))
+
 @testset "Allocation Tests" begin
     @testset "dassl_norm - zero allocations" begin
         v = [1.0, 2.0, 3.0]
         wt = [0.5, 0.5, 0.5]
-        # Warmup
-        DASSL.dassl_norm(v, wt)
-        # Test allocations
-        allocs = @allocated DASSL.dassl_norm(v, wt)
-        @test allocs == 0
+        @test norm_allocs(v, wt) == 0
     end
 
     @testset "_all_steps_equal - zero allocations" begin
@@ -163,16 +170,9 @@ using Test
         DASSL.push_history!(cache, 0.1, y0 .+ 0.1, zeros(2))
         DASSL.push_history!(cache, 0.2, y0 .+ 0.2, zeros(2))
 
-        # Warmup
-        DASSL.get_history_t!(cache, 2)
-        DASSL.get_history_y!(cache, 2)
-
-        # Test allocations - views into pre-allocated buffers should be zero-alloc
-        allocs = @allocated DASSL.get_history_t!(cache, 2)
-        @test allocs == 0
-
-        allocs = @allocated DASSL.get_history_y!(cache, 2)
-        @test allocs == 0
+        # Views into pre-allocated buffers should be zero-alloc (no data copy).
+        @test hist_t_allocs(cache, 2) == 0
+        @test hist_y_allocs(cache, 2) == 0
     end
 
     @testset "In-place stepper! allocation check" begin
