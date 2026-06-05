@@ -1,7 +1,7 @@
 using DASSL, Test
 using LinearAlgebra: diagm, I
 
-const GROUP = get(ENV, "GROUP", "all")
+const GROUP = let g = get(ENV, "GROUP", "all"); isempty(g) ? "all" : g end
 
 if GROUP == "all" || GROUP == "core"
     @testset "Testing maxorder" begin
