@@ -12,7 +12,10 @@ on:
       - 'docs/**'
 jobs:
   test:
-    if: false  # Disabled: waiting on dependency updates. See issue for details.
+    # Runs strict downgrade (allow_reresolve=false). Expected RED until the upstream
+    # fix releases (ForwardDiff/LogExpFunctions — red until ForwardDiff 1.3.4 (#811)
+    # releases); will auto-green on that release. The failure is intentional/natural,
+    # not disabled.
     uses: "SciML/.github/.github/workflows/downgrade.yml@v1"
     with:
       julia-version: "1.10"
