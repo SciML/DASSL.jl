@@ -1,11 +1,13 @@
-using DASSL, Test
-using LinearAlgebra: diagm, I
+using Test
 
-const GROUP = let g = get(ENV, "GROUP", "all")
-    isempty(g) ? "all" : g
+const GROUP = let g = get(ENV, "GROUP", "All")
+    isempty(g) ? "All" : g
 end
 
-if GROUP == "all" || GROUP == "core"
+if GROUP == "All" || GROUP == "Core"
+    using DASSL
+    using LinearAlgebra: diagm, I
+
     @testset "Testing maxorder" begin
         F(t, y, dy) = (dy + y .^ 2)
         Fy(t, y, dy) = diagm(0 => 2y)
@@ -75,23 +77,10 @@ if GROUP == "all" || GROUP == "core"
     end
 end
 
-if GROUP == "all" || GROUP == "QA"
-    @testset "QA" begin
-        @testset "Explicit Imports" begin
-            include("explicit_imports.jl")
-        end
-
-        @testset "Type Stability" begin
-            alg = dassl()
-            @test typeof(alg.maxorder) === Int
-            @test typeof(alg.factorize_jacobian) === Bool
-
-            y0 = [1.0, 2.0]
-            cache = DASSL.alg_cache(alg, y0, nothing, 0.0, Val(true))
-            @test isconcretetype(typeof(cache.jac_factorized))
-            @test !(cache.jac_factorized isa Any && typeof(cache.jac_factorized) === Any)
-        end
-
-        include("alloc_tests.jl")
-    end
+if GROUP == "QA"
+    import Pkg
+    Pkg.activate(joinpath(@__DIR__, "qa"))
+    Pkg.develop(path = joinpath(@__DIR__, ".."))
+    Pkg.instantiate()
+    include(joinpath(@__DIR__, "qa", "qa.jl"))
 end
