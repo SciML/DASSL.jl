@@ -1,13 +1,12 @@
 using Test
+using DASSL
+using LinearAlgebra: diagm, I
 
 const GROUP = let g = get(ENV, "GROUP", "All")
     isempty(g) ? "All" : g
 end
 
 if GROUP == "All" || GROUP == "Core"
-    using DASSL
-    using LinearAlgebra: diagm, I
-
     @testset "Testing maxorder" begin
         F(t, y, dy) = (dy + y .^ 2)
         Fy(t, y, dy) = diagm(0 => 2y)
