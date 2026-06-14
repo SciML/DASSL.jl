@@ -1,13 +1,16 @@
 using Test
-using DASSL
-using LinearAlgebra: diagm, I
+using SafeTestsets
 
 const GROUP = let g = get(ENV, "GROUP", "All")
     isempty(g) ? "All" : g
 end
 
 if GROUP == "All" || GROUP == "Core"
-    @testset "Testing maxorder" begin
+    @safetestset "Testing maxorder" begin
+        using DASSL
+        using LinearAlgebra: diagm, I
+        using Test
+
         F(t, y, dy) = (dy + y .^ 2)
         Fy(t, y, dy) = diagm(0 => 2y)
         Fdy(t, y, dy) = Matrix{Float64}(I, length(y), length(y))
@@ -52,26 +55,28 @@ if GROUP == "All" || GROUP == "Core"
         end
     end
 
-    @testset "Testing common interface" begin
+    @safetestset "Testing common interface" begin
         include("common.jl")
     end
 
-    @testset "DAE Initialization" begin
+    @safetestset "DAE Initialization" begin
         include("initialization_tests.jl")
     end
 
-    @testset "ModelingToolkit DAE Initialization" begin
+    @safetestset "ModelingToolkit DAE Initialization" begin
         include("mtk_initialization_tests.jl")
     end
 
-    @testset "Interface Compatibility" begin
+    @safetestset "Interface Compatibility" begin
         include("interface.jl")
     end
 
-    include("convergence.jl")
+    @safetestset "Convergence tests" begin
+        include("convergence.jl")
+    end
 
     # In-place tests
-    @testset "In-Place Operations" begin
+    @safetestset "In-Place Operations" begin
         include("inplace_tests.jl")
     end
 end

@@ -25,6 +25,7 @@ ModelingToolkit = "10, 11"
 NonlinearSolve = "4.19.1"
 PrecompileTools = "1.2.1"
 Reexport = "1.2.2"
+SafeTestsets = "0.1, 1"
 SciMLBase = "3.18.0"
 SciMLLogging = "1.10.1, 2"
 SymbolicIndexingInterface = "0.3.48"
@@ -40,7 +41,8 @@ JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AllocCheck", "BenchmarkTools", "DAEProblemLibrary", "ExplicitImports", "JLArrays", "ModelingToolkit", "NonlinearSolve", "Pkg", "Test"]
+test = ["AllocCheck", "BenchmarkTools", "DAEProblemLibrary", "ExplicitImports", "JLArrays", "ModelingToolkit", "NonlinearSolve", "Pkg", "SafeTestsets", "Test"]
