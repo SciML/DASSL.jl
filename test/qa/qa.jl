@@ -3,7 +3,7 @@ using Test
 
 @testset "QA" begin
     @testset "Explicit Imports" begin
-        include(joinpath(@__DIR__, "..", "explicit_imports.jl"))
+        include(joinpath(@__DIR__, "..", "shared", "explicit_imports.jl"))
     end
 
     @testset "Type Stability" begin
@@ -17,5 +17,5 @@ using Test
         @test !(cache.jac_factorized isa Any && typeof(cache.jac_factorized) === Any)
     end
 
-    include(joinpath(@__DIR__, "..", "alloc_tests.jl"))
+    include(joinpath(@__DIR__, "..", "shared", "alloc_tests.jl"))
 end
