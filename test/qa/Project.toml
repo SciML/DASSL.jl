@@ -1,7 +1,7 @@
 [deps]
 AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 DASSL = "e993076c-0cfd-5d6b-a1ac-36489fdf7917"
-ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 SciMLTesting = "09d9d899-5365-40a9-917a-5f67fddea283"
@@ -12,8 +12,9 @@ DASSL = {path = "../.."}
 
 [compat]
 AllocCheck = "0.2"
-ExplicitImports = "1.4.2"
+Aqua = "0.8"
+LinearAlgebra = "1"
 SafeTestsets = "0.1, 1"
-SciMLTesting = "1"
+SciMLTesting = "1.6"
 Test = "1"
 julia = "1.10"
