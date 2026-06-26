@@ -1,8 +1,8 @@
 using SciMLTesting, DASSL, Test
 
-# All flagged names are non-public in their *own* packages (SciMLBase/DiffEqBase/
-# ArrayInterface internals DASSL legitimately depends on); ignore them here and drop
-# each as its source package marks the name public.
+# Remaining names are still non-public in their *own* packages (SciMLBase/DiffEqBase
+# internals DASSL legitimately depends on); ignore them here and drop each as its
+# source package marks the name public.
 run_qa(
     DASSL; explicit_imports = true,
     ei_kwargs = (;
@@ -12,19 +12,9 @@ run_qa(
                 :AbstractDAEProblem,        # SciMLBase
                 :NoInit,                    # SciMLBase
                 :OverrideInit,              # SciMLBase
-                :build_solution,            # SciMLBase
                 :get_initial_values,        # SciMLBase
                 :has_initialization_data,   # SciMLBase
                 :_process_verbose_param,    # DiffEqBase
-                :fast_scalar_indexing,      # ArrayInterface
-            ),
-        ),
-        # ReturnCode enum members are not marked public on Julia 1.10's view of
-        # SciMLBase.ReturnCode (passes on 1.11+); ignore as SciMLBase-owned names.
-        all_qualified_accesses_are_public = (;
-            ignore = (
-                :Success,                   # SciMLBase.ReturnCode
-                :InitialFailure,            # SciMLBase.ReturnCode
             ),
         ),
     )
