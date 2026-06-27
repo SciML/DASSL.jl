@@ -8,11 +8,6 @@ run_qa(
     ei_kwargs = (;
         all_explicit_imports_are_public = (;
             ignore = (
-                :AbstractDAEAlgorithm,      # SciMLBase
-                :AbstractDAEProblem,        # SciMLBase
-                :NoInit,                    # SciMLBase
-                :OverrideInit,              # SciMLBase
-                :get_initial_values,        # SciMLBase
                 :has_initialization_data,   # SciMLBase
                 :_process_verbose_param,    # DiffEqBase
             ),
