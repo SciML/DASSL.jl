@@ -8,7 +8,6 @@ run_qa(
     ei_kwargs = (;
         all_explicit_imports_are_public = (;
             ignore = (
-                :has_initialization_data,   # SciMLBase
                 :_process_verbose_param,    # DiffEqBase
             ),
         ),
