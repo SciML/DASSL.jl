@@ -1,10 +1,13 @@
 using SciMLTesting, DASSL, Test
 
+diffeqbase_reexports = Tuple(names(DASSL.DiffEqBase))
+
 # Remaining names are still non-public in their *own* packages (SciMLBase/DiffEqBase
 # internals DASSL legitimately depends on); ignore them here and drop each as its
 # source package marks the name public.
 run_qa(
     DASSL; explicit_imports = true,
+    api_docs_kwargs = (; rendered = true, rendered_ignore = diffeqbase_reexports),
     ei_kwargs = (;
         all_explicit_imports_are_public = (;
             ignore = (
