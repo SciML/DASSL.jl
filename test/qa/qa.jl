@@ -1,7 +1,12 @@
 using SciMLTesting, DASSL, Test
 
+# DASSL historically exposes the DiffEqBase API as a solver-interface facade.
+diffeqbase_reexports = Tuple(names(DASSL.DiffEqBase))
+
 run_qa(
-    DASSL; explicit_imports = true,
+    DASSL;
+    reexports_allow = diffeqbase_reexports,
+    api_docs_kwargs = (; rendered_ignore = diffeqbase_reexports),
     ei_kwargs = (;
         all_explicit_imports_are_public = (;
             ignore = (
