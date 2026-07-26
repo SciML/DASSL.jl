@@ -4,16 +4,14 @@ export dasslIterator, dasslSolve, dasslSolve!
 export DASSLCache, alg_cache
 
 using ArrayInterface: fast_scalar_indexing
-using Reexport: @reexport
-using DiffEqBase: DiffEqBase, DEVerbosity, _process_verbose_param
-@reexport using DiffEqBase
+using DiffEqBase: DEVerbosity
 using LinearAlgebra: I, diagm, factorize, lu
 using PrecompileTools: @compile_workload, @setup_workload
 using SciMLBase: DAEProblem, SciMLBase
 using SciMLLogging: SciMLLogging, Standard, @SciMLMessage
 using SymbolicIndexingInterface: SymbolicIndexingInterface
 
-import DiffEqBase: solve
+import SciMLBase: solve
 
 export dassl
 
@@ -217,10 +215,10 @@ on solution values.
 
 # Example
 ```julia
-F(t,y,dy) = dy .+ y
+F(t, y, dy) = dy .+ y
 
 # Stop integration when solution drops below 0.1
-for (t,y,dy) in dasslIterator(F, [1.0], 0.0)
+for (t, y, dy) in dasslIterator(F, [1.0], 0.0)
     if y[1] < 0.1
         @show (t, y[1], dy[1])
         break
@@ -235,7 +233,7 @@ function dasslIterator(F, y0, t0; args...)
 end
 
 """
-    dasslSolve(F, y0, tspan; dy0=zero(y0), kwargs...)
+    dasslSolve(F, y0, tspan; dy0 = zero(y0), kwargs...)
 
 Solve the DAE system `F(t,y,dy)=0` over the time span `tspan`.
 
@@ -270,16 +268,16 @@ over the specified time interval.
 using DASSL
 
 # Scalar equation
-F(t,y,dy) = dy + y
+F(t, y, dy) = dy + y
 y0 = 1.0
 tspan = [0.0, 10.0]
 (tn, yn, dyn) = dasslSolve(F, y0, tspan)
 
 # Vector equation (pendulum)
-function F(t,y,dy)
-    [
+function F(t, y, dy)
+    return [
         dy[1] - y[2],      # y[1]=u,   y[2]=v
-        dy[2] + sin(y[1])  # dy[1]=u', dy[2]=v'
+        dy[2] + sin(y[1]),  # dy[1]=u', dy[2]=v'
     ]
 end
 y0 = [0.0, 1.0]

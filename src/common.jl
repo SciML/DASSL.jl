@@ -35,7 +35,7 @@ struct dassl <: DASSLDAEAlgorithm
 end
 
 dassl(; maxorder = 6, factorize_jacobian = true, verbose = Standard()) =
-    dassl(maxorder, factorize_jacobian, _process_verbose_param(verbose))
+    dassl(maxorder, factorize_jacobian, DEVerbosity(verbose))
 
 function solve(
         prob::AbstractDAEProblem{uType, duType, tupType, isinplace},

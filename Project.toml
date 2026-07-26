@@ -1,6 +1,6 @@
 name = "DASSL"
 uuid = "e993076c-0cfd-5d6b-a1ac-36489fdf7917"
-version = "3.0.4"
+version = "4.0.0"
 authors = ["Chris Rackauckas <accounts@chrisrackauckas.com>"]
 
 [deps]
@@ -8,7 +8,6 @@ ArrayInterface = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
-Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 SciMLLogging = "a6db7da4-7206-11f0-1eab-35f2a5dbe1d1"
 SymbolicIndexingInterface = "2efcf032-c050-4f8e-a9bb-153293bab1f5"
@@ -24,7 +23,6 @@ LinearAlgebra = "1"
 ModelingToolkit = "10, 11"
 NonlinearSolve = "4.19.1"
 PrecompileTools = "1.2.1"
-Reexport = "1.2.2"
 SafeTestsets = "0.1, 1"
 SciMLBase = "3.18.0"
 SciMLLogging = "1.10.1, 2"
