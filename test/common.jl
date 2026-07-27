@@ -1,5 +1,6 @@
-using DiffEqBase, DASSL
+using DASSL
 using DAEProblemLibrary: prob_dae_resrob
+using SciMLBase: DAEProblem, ReturnCode, isinplace, solve
 
 prob = prob_dae_resrob
 
@@ -16,7 +17,7 @@ sol = solve(prob, dassl(), abstol = 1.0e-1, reltol = 1.0e-2)
     u0 = [1.0, 1.0]
     du0 = [-1.0, -1.0]
     oop_prob = DAEProblem(dae_oop, du0, u0, (0.0, 1.0))
-    @test !DiffEqBase.isinplace(oop_prob)   # confirm the OOP branch is exercised
+    @test !isinplace(oop_prob)   # confirm the OOP branch is exercised
     oop_sol = solve(oop_prob, dassl(), abstol = 1.0e-8, reltol = 1.0e-8)
     @test oop_sol.retcode == ReturnCode.Success
     @test isapprox(oop_sol.u[end][1], exp(-1); atol = 1.0e-5)

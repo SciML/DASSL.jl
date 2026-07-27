@@ -1,7 +1,9 @@
 # Tests for DAE initialization support
 using DASSL
 using Test
-using SciMLBase: NoInit, CheckInit, OverrideInit
+using DiffEqBase: DefaultInit
+import SciMLBase
+using SciMLBase: CheckInit, DAEProblem, NoInit, OverrideInit, solve
 
 @testset "DAE Initialization" begin
     @testset "DefaultInit with consistent ICs" begin
@@ -88,8 +90,7 @@ using SciMLBase: NoInit, CheckInit, OverrideInit
         @test SciMLBase.successful_retcode(sol)
     end
 
-    @testset "DefaultInit export" begin
-        # DefaultInit comes from DiffEqBase (reexported by DASSL)
+    @testset "DefaultInit SciMLBase contract" begin
         @test DefaultInit <: SciMLBase.DAEInitializationAlgorithm
         @test DefaultInit() isa DefaultInit
     end

@@ -1,4 +1,5 @@
 using DASSL
+using SciMLBase: DAEProblem, solve
 using Test
 
 @testset "In-Place Operations" begin
