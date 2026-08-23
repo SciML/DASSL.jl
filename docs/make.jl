@@ -18,6 +18,7 @@ makedocs(;
     ),
     pages = [
         "Public API" => "index.md",
+        "API" => "api.md",
     ],
 )
 
