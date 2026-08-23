@@ -15,6 +15,26 @@ import SciMLBase: solve
 
 export dassl
 
+# The SciML common interface that DASSL reexports (see the `export` block below), so that
+# `using DASSL` on its own is enough to build a DAE problem, solve it, and inspect the
+# result -- the workflow the README and the `dassl` docstring document. The DAE
+# initialization algorithms are the ones `initialize_dae!` in src/initialize.jl has
+# methods for. Every name stays owned and documented upstream.
+using SciMLBase: DAEFunction, DAESolution, DEStats, EnsembleAnalysis, EnsembleDistributed,
+    EnsembleProblem, EnsembleSerial, EnsembleSolution, EnsembleSplitThreads,
+    EnsembleSummary, EnsembleThreads, NullParameters, successful_retcode
+
+# Reexported SciML common interface; approved via `reexports_allow` in test/qa/qa.jl.
+# `DAEProblem` is imported above, `ReturnCode`/`remake` in src/common.jl.
+export DAEFunction, DAEProblem, DAESolution, DEStats, EnsembleAnalysis,
+    EnsembleDistributed, EnsembleProblem, EnsembleSerial, EnsembleSolution,
+    EnsembleSplitThreads, EnsembleSummary, EnsembleThreads, NullParameters, ReturnCode,
+    remake, solve, successful_retcode
+# DAE initialization algorithms accepted by the `initializealg` keyword; `CheckInit`,
+# `NoInit` and `OverrideInit` are imported in src/initialize.jl from SciMLBase,
+# `DefaultInit` from DiffEqBase.
+export CheckInit, DefaultInit, NoInit, OverrideInit
+
 const MAXORDER = 6
 const MAXIT = 10
 
